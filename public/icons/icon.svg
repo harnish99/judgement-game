@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Background -->
+  <rect width="512" height="512" rx="96" fill="#111827"/>
+  <!-- Gold ring -->
+  <rect width="512" height="512" rx="96" fill="none" stroke="#EAB308" stroke-width="24"/>
+  <!-- Card silhouette -->
+  <rect x="136" y="96" width="240" height="320" rx="24" fill="#1F2937" stroke="#374151" stroke-width="4"/>
+  <!-- Spade suit -->
+  <text x="256" y="310" font-family="serif" font-size="200" text-anchor="middle" fill="#E5E7EB">♠</text>
+  <!-- "J" rank top-left -->
+  <text x="160" y="162" font-family="serif" font-size="60" font-weight="bold" text-anchor="middle" fill="#EAB308">J</text>
+  <!-- "J" rank bottom-right (inverted) -->
+  <text x="352" y="382" font-family="serif" font-size="60" font-weight="bold" text-anchor="middle" fill="#EAB308" transform="rotate(180 352 358)">J</text>
+</svg>
