@@ -47,9 +47,13 @@ export function playCard(state: GameState, playerId: number, cardIndex: number):
     p.id !== playerId ? p : { ...p, hand: p.hand.filter((_, i) => i !== cardIndex) }
   );
   const currentTrick: TrickCard[] = [...state.currentTrick, { card, playerId }];
+  const playerCount = state.players.length;
 
-  if (currentTrick.length < 4) {
-    return { ...state, players, currentTrick, currentTurn: (playerId + 1) % 4 };
+  if (currentTrick.length < playerCount) {
+    // Advance to next player in seating order (IDs 0..N-1 clockwise)
+    const currentIndex = state.players.findIndex((p) => p.id === playerId);
+    const nextId = state.players[(currentIndex + 1) % playerCount].id;
+    return { ...state, players, currentTrick, currentTurn: nextId };
   }
 
   const winnerId = determineTrickWinner(currentTrick, state.trump);

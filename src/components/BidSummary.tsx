@@ -12,9 +12,11 @@ interface BidSummaryProps {
   game: GameState;
   roundNumber: number;
   onStartRound: () => void;
+  /** When false, hides the Start Round button and shows a waiting message. Defaults to true. */
+  canStart?: boolean;
 }
 
-export default function BidSummary({ game, roundNumber, onStartRound }: BidSummaryProps) {
+export default function BidSummary({ game, roundNumber, onStartRound, canStart = true }: BidSummaryProps) {
   const { players, bids, trump, bidOrder, cardsPerPlayer } = game;
   const totalBids = Object.values(bids).reduce<number>((s, b) => s + (b ?? 0), 0);
   const diff = totalBids - cardsPerPlayer;
@@ -61,12 +63,18 @@ export default function BidSummary({ game, roundNumber, onStartRound }: BidSumma
           </p>
         </div>
 
-        <button
-          onClick={onStartRound}
-          className="w-full py-3 bg-yellow-500 hover:bg-yellow-400 active:bg-yellow-600 text-gray-900 font-bold rounded-full text-base transition-colors shadow-lg"
-        >
-          Start Round
-        </button>
+        {canStart ? (
+          <button
+            onClick={onStartRound}
+            className="w-full py-3 bg-yellow-500 hover:bg-yellow-400 active:bg-yellow-600 text-gray-900 font-bold rounded-full text-base transition-colors shadow-lg"
+          >
+            Start Round
+          </button>
+        ) : (
+          <p className="text-center text-sm text-gray-500 py-2 flex items-center justify-center gap-2">
+            <span className="animate-pulse">⏳</span> Waiting for host to start round…
+          </p>
+        )}
       </div>
     </div>
   );

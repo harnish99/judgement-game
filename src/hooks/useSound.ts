@@ -95,5 +95,27 @@ export function useSound() {
     });
   }, [playTone]);
 
-  return { muted, toggleMute, playCardSound, playTrickWonSound, playRoundCompleteSound, playGameWonSound };
+  /** Two sharp ticks — played at the 5-second warning. */
+  const playTimerWarningSound = useCallback(() => {
+    playTone(1200, 0,    0.06, 0.2, "square");
+    playTone(1200, 0.12, 0.06, 0.2, "square");
+  }, [playTone]);
+
+  /** Short descending buzz — played when a turn timer expires. */
+  const playTimerExpireSound = useCallback(() => {
+    playTone(600, 0,    0.08, 0.25, "sawtooth");
+    playTone(400, 0.08, 0.12, 0.2,  "sawtooth");
+    playTone(250, 0.18, 0.15, 0.15, "sawtooth");
+  }, [playTone]);
+
+  return {
+    muted,
+    toggleMute,
+    playCardSound,
+    playTrickWonSound,
+    playRoundCompleteSound,
+    playGameWonSound,
+    playTimerWarningSound,
+    playTimerExpireSound,
+  };
 }
