@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import ServiceWorkerRegistrar from "@/components/ServiceWorkerRegistrar";
+import PostHogProvider from "@/components/PostHogProvider";
 
 export const metadata: Metadata = {
   title: "Judgement",
@@ -51,6 +52,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <style>{`body{background-color:#111827}`}</style>
       </head>
       <body className="bg-gray-900 text-white antialiased">
+        <PostHogProvider />
         <ServiceWorkerRegistrar />
         {children}
       </body>
