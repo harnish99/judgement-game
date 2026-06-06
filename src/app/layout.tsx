@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import ServiceWorkerRegistrar from "@/components/ServiceWorkerRegistrar";
 import PostHogProvider from "@/components/PostHogProvider";
+import InstallPrompt from "@/components/InstallPrompt";
 
 export const metadata: Metadata = {
   title: "Judgement",
@@ -55,6 +56,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <PostHogProvider />
         <ServiceWorkerRegistrar />
         {children}
+        <InstallPrompt />
       </body>
     </html>
   );
