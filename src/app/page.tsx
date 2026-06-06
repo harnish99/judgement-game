@@ -16,6 +16,7 @@ import { getValidCardIndices, playCard, startNextTrick } from "@/game/trick";
 import type { Difficulty, MatchState } from "@/game/types";
 import { useSound } from "@/hooks/useSound";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useAnalytics } from "@/hooks/useAnalytics";
 
 const STORAGE_KEY = "judgement-v1";
 
@@ -48,6 +49,7 @@ export default function Home() {
   const initialized = useRef(false);
   const { muted, toggleMute, playCardSound, playTrickWonSound, playRoundCompleteSound, playGameWonSound } = useSound();
   const { hapticCard, hapticTrickWon } = useHaptics();
+  const { track } = useAnalytics();
 
   // Load persisted state once on mount
   useEffect(() => {
@@ -67,7 +69,8 @@ export default function Home() {
 
   const handleStartMatch = useCallback((difficulty: Difficulty) => {
     setMatch(initMatch(difficulty));
-  }, []);
+    track("game_started", { difficulty, playerCount: 4 });
+  }, [track]);
 
   // ── Round-complete: pause 1 s to show last trick, then finalize ───────────
   useEffect(() => {
@@ -76,16 +79,68 @@ export default function Home() {
     return () => clearTimeout(t);
   }, [match]);
 
-  // ── Match phase sounds ────────────────────────────────────────────────────
+  // ── Match phase sounds + analytics ───────────────────────────────────────
   const prevMatchPhaseRef = useRef<string | null>(null);
+  const prevRoundNumberRef = useRef<number | null>(null);
+
   useEffect(() => {
     const phase = match?.matchPhase ?? null;
+    const roundNumber = match?.roundNumber ?? null;
+
+    // ── Phase transition ──────────────────────────────────────────────────
     if (phase !== prevMatchPhaseRef.current) {
-      if (phase === "round-result") playRoundCompleteSound();
-      if (phase === "match-complete") playGameWonSound();
+      // round-result: a round just finished
+      if (phase === "round-result" && match) {
+        playRoundCompleteSound();
+        const lastResult = match.roundHistory[match.roundHistory.length - 1];
+        if (lastResult) {
+          const humanBid = lastResult.bids[0] ?? 0;
+          const humanWon = lastResult.tricksWon[0] ?? 0;
+          track("round_completed", {
+            roundNumber: lastResult.roundNumber,
+            humanHitBid: humanBid === humanWon,
+            humanBid,
+            humanTricksWon: humanWon,
+            humanRoundScore: lastResult.roundScores[0] ?? 0,
+          });
+        }
+      }
+
+      // match-complete: game is over
+      if (phase === "match-complete" && match) {
+        playGameWonSound();
+        const humanScore = match.scores[0] ?? 0;
+        const allScores = Object.values(match.scores).sort((a, b) => b - a);
+        const rank = allScores.indexOf(humanScore) + 1;
+
+        track("game_finished", { finalScore: humanScore, rank });
+
+        if (rank === 1) {
+          track("game_won", { finalScore: humanScore, totalRounds: match.roundNumber });
+        } else {
+          track("game_lost", { finalScore: humanScore, rank, totalRounds: match.roundNumber });
+        }
+      }
+
       prevMatchPhaseRef.current = phase;
     }
-  }, [match?.matchPhase, playRoundCompleteSound, playGameWonSound]);
+
+    // ── New round started (roundNumber bumped + phase back to in-round) ───
+    if (
+      roundNumber !== null &&
+      roundNumber !== prevRoundNumberRef.current &&
+      phase === "in-round" &&
+      match?.currentRound
+    ) {
+      const r = match.currentRound;
+      track("round_started", {
+        roundNumber,
+        cardsPerPlayer: r.cardsPerPlayer,
+        trump: r.trump,
+      });
+      prevRoundNumberRef.current = roundNumber;
+    }
+  }, [match?.matchPhase, match?.roundNumber, match, track, playRoundCompleteSound, playGameWonSound]);
 
   // ── Bidding ───────────────────────────────────────────────────────────────
   const handleHumanBid = useCallback((bid: number) => {
@@ -93,9 +148,14 @@ export default function Home() {
       const r = prev?.currentRound;
       if (!r || r.phase !== "bidding") return prev;
       if (r.bidOrder[r.biddingTurnIndex] !== 0) return prev;
+      track("bid_submitted", {
+        roundNumber: prev!.roundNumber,
+        bid,
+        cardsPerPlayer: r.cardsPerPlayer,
+      });
       return { ...prev!, currentRound: placeBid(r, bid) };
     });
-  }, []);
+  }, [track]);
 
   useEffect(() => {
     const r = match?.currentRound;
@@ -138,6 +198,13 @@ export default function Home() {
       setShowToast(true);
       playTrickWonSound();
       hapticTrickWon();
+      if (r.lastTrickWinner !== null) {
+        track("trick_won", {
+          roundNumber: match!.roundNumber,
+          trickNumber: r.trickNumber - 1, // trickNumber already incremented
+          byHuman: r.lastTrickWinner === 0,
+        });
+      }
       const t = setTimeout(() => {
         setShowToast(false);
         setMatch((m) => m?.currentRound ? { ...m, currentRound: startNextTrick(m.currentRound!) } : m);
@@ -167,7 +234,7 @@ export default function Home() {
       }, 650);
       return () => clearTimeout(t);
     }
-  }, [match, playTrickWonSound, hapticTrickWon, playCardSound]);
+  }, [match, playTrickWonSound, hapticTrickWon, playCardSound, track]);
 
   // ── Shared header ─────────────────────────────────────────────────────────
   function Header({ sublabel }: { sublabel?: string }) {
