@@ -1,5 +1,5 @@
 import type { MatchState } from "@/game/types";
-import { TOTAL_ROUNDS } from "@/game/match";
+import { totalRounds } from "@/game/match";
 
 const SUIT_SYMBOLS: Record<string, string> = {
   hearts: "♥", diamonds: "♦", clubs: "♣", spades: "♠",
@@ -12,13 +12,16 @@ const SUIT_COLORS: Record<string, string> = {
 interface RoundResultScreenProps {
   match: MatchState;
   onNextRound: () => void;
+  /** When false, hides the Next Round button and shows a waiting message. Defaults to true. */
+  canAdvance?: boolean;
 }
 
-export default function RoundResultScreen({ match, onNextRound }: RoundResultScreenProps) {
+export default function RoundResultScreen({ match, onNextRound, canAdvance = true }: RoundResultScreenProps) {
   const round = match.currentRound!;
   const lastResult = match.roundHistory[match.roundHistory.length - 1];
   const { players } = round;
-  const isMatchDone = match.roundNumber >= TOTAL_ROUNDS;
+  const numRounds = totalRounds(match.playerCount);
+  const isMatchDone = match.roundNumber >= numRounds;
 
   const humanHit = round.tricksWon[0] === (round.bids[0] ?? 0);
 
@@ -98,7 +101,7 @@ export default function RoundResultScreen({ match, onNextRound }: RoundResultScr
       <div className="w-full bg-gray-800 rounded-2xl overflow-hidden">
         <div className="px-4 py-2 border-b border-gray-700 flex items-center justify-between">
           <p className="text-xs text-gray-400 uppercase tracking-wider">Leaderboard</p>
-          <p className="text-xs text-gray-500">after {match.roundNumber} of {TOTAL_ROUNDS} rounds</p>
+          <p className="text-xs text-gray-500">after {match.roundNumber} of {numRounds} rounds</p>
         </div>
         <div className="divide-y divide-gray-700">
           {leaderboard.map((player, rank) => (
@@ -119,12 +122,18 @@ export default function RoundResultScreen({ match, onNextRound }: RoundResultScr
         </div>
       </div>
 
-      <button
-        onClick={onNextRound}
-        className="w-full py-3 bg-yellow-500 hover:bg-yellow-400 active:bg-yellow-600 text-gray-900 font-bold rounded-full text-base transition-colors shadow-lg"
-      >
-        {isMatchDone ? "See Final Results" : `Start Round ${match.roundNumber + 1}`}
-      </button>
+      {canAdvance ? (
+        <button
+          onClick={onNextRound}
+          className="w-full py-3 bg-yellow-500 hover:bg-yellow-400 active:bg-yellow-600 text-gray-900 font-bold rounded-full text-base transition-colors shadow-lg"
+        >
+          {isMatchDone ? "See Final Results" : `Start Round ${match.roundNumber + 1} of ${numRounds}`}
+        </button>
+      ) : (
+        <p className="text-center text-sm text-gray-500 py-2 flex items-center justify-center gap-2">
+          <span className="animate-pulse">⏳</span> Waiting for host to continue…
+        </p>
+      )}
     </div>
   );
 }

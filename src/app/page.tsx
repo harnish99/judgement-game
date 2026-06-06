@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import BidSummary from "@/components/BidSummary";
 import BiddingScreen from "@/components/BiddingScreen";
 import MatchSummary from "@/components/MatchSummary";
@@ -11,9 +12,9 @@ import TrickArea from "@/components/TrickArea";
 import TrickWinnerToast from "@/components/TrickWinnerToast";
 import { aiBidForDifficulty, aiChooseCardForDifficulty } from "@/game/ai";
 import { getForbiddenBid, placeBid } from "@/game/bidding";
-import { finalizeRound, initMatch, startNextRound, TOTAL_ROUNDS } from "@/game/match";
+import { finalizeRound, initMatch, startNextRound, totalRounds } from "@/game/match";
 import { getValidCardIndices, playCard, startNextTrick } from "@/game/trick";
-import type { Difficulty, MatchState } from "@/game/types";
+import type { Difficulty, MatchState, Player, PlayerCount } from "@/game/types";
 import { useSound } from "@/hooks/useSound";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAnalytics } from "@/hooks/useAnalytics";
@@ -28,8 +29,9 @@ function loadMatch(): MatchState | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as MatchState;
     if (!parsed.matchPhase || parsed.roundNumber == null) return null;
-    // Back-fill difficulty for saves that predate this field
+    // Back-fill fields for saves that predate them
     if (!parsed.difficulty) parsed.difficulty = "easy";
+    if (!parsed.playerCount) parsed.playerCount = 4;
     return parsed;
   } catch {
     return null;
@@ -44,10 +46,50 @@ function saveMatch(match: MatchState) {
   }
 }
 
+// ─── Table layout helper ──────────────────────────────────────────────────────
+
+/**
+ * Given the full player list, returns which AI players go where on screen.
+ * Player 0 (human) always sits at the bottom.
+ * IDs are assigned clockwise: 1=N, 2=NW, 3=NE, 4=W/E, 5=E.
+ *
+ * Layout per count:
+ *  3p → top:[1], left:[], right:[2]
+ *  4p → top:[1], left:[2], right:[3]
+ *  5p → top:[2,1,3], left:[], right:[4]
+ *  6p → top:[2,1,3], left:[4], right:[5]
+ */
+function getTableLayout(players: Player[]) {
+  const n = players.length;
+  const human = players.find((p) => p.isHuman)!;
+  const ai = players.filter((p) => !p.isHuman); // IDs 1..N-1 in order
+
+  switch (n) {
+    case 3:
+      return { topRow: [ai[0]], leftPlayer: null, rightPlayer: ai[1], human };
+    case 5:
+      return { topRow: [ai[1], ai[0], ai[2]], leftPlayer: null, rightPlayer: ai[3], human };
+    case 6:
+      return { topRow: [ai[1], ai[0], ai[2]], leftPlayer: ai[3], rightPlayer: ai[4], human };
+    default: // 4 (and fallback)
+      return { topRow: [ai[0]], leftPlayer: ai[1] ?? null, rightPlayer: ai[2] ?? null, human };
+  }
+}
+
+const PLAYER_COUNT_OPTIONS: { count: PlayerCount; label: string; rounds: number }[] = [
+  { count: 3, label: "3 Players", rounds: 17 },
+  { count: 4, label: "4 Players", rounds: 13 },
+  { count: 5, label: "5 Players", rounds: 10 },
+  { count: 6, label: "6 Players", rounds: 8 },
+];
+
 export default function Home() {
   const [match, setMatch] = useState<MatchState | null>(null);
   const [showRules, setShowRules] = useState(false);
   const [showToast, setShowToast] = useState(false);
+  const [selectedCount, setSelectedCount] = useState<PlayerCount>(4);
+  const [soloFlow, setSoloFlow] = useState(false);
+  const [selectedDifficulty, setSelectedDifficulty] = useState<Difficulty>("easy");
   const initialized = useRef(false);
   const { muted, toggleMute, playCardSound, playTrickWonSound, playRoundCompleteSound, playGameWonSound } = useSound();
   const { hapticCard, hapticTrickWon } = useHaptics();
@@ -67,12 +109,11 @@ export default function Home() {
     if (match) saveMatch(match);
   }, [match]);
 
-  // Go back to the difficulty-select menu
   const handleReturnToMenu = useCallback(() => setMatch(null), []);
 
-  const handleStartMatch = useCallback((difficulty: Difficulty) => {
-    setMatch(initMatch(difficulty));
-    track("game_started", { difficulty, playerCount: 4 });
+  const handleStartMatch = useCallback((difficulty: Difficulty, playerCount: PlayerCount) => {
+    setMatch(initMatch(difficulty, playerCount));
+    track("game_started", { difficulty, playerCount });
   }, [track]);
 
   // ── Round-complete: pause 1 s to show last trick, then finalize ───────────
@@ -90,9 +131,7 @@ export default function Home() {
     const phase = match?.matchPhase ?? null;
     const roundNumber = match?.roundNumber ?? null;
 
-    // ── Phase transition ──────────────────────────────────────────────────
     if (phase !== prevMatchPhaseRef.current) {
-      // round-result: a round just finished
       if (phase === "round-result" && match) {
         playRoundCompleteSound();
         const lastResult = match.roundHistory[match.roundHistory.length - 1];
@@ -106,12 +145,10 @@ export default function Home() {
             humanTricksWon: humanWon,
             humanRoundScore: lastResult.roundScores[0] ?? 0,
           });
-          // ── Stats: record round ──────────────────────────────────────────
           recordRound(lastResult);
         }
       }
 
-      // match-complete: game is over
       if (phase === "match-complete" && match) {
         playGameWonSound();
         const humanScore = match.scores[0] ?? 0;
@@ -119,20 +156,17 @@ export default function Home() {
         const rank = allScores.indexOf(humanScore) + 1;
 
         track("game_finished", { finalScore: humanScore, rank });
-
         if (rank === 1) {
           track("game_won", { finalScore: humanScore, totalRounds: match.roundNumber });
         } else {
           track("game_lost", { finalScore: humanScore, rank, totalRounds: match.roundNumber });
         }
-        // ── Stats: record game ─────────────────────────────────────────────
         recordGame(match);
       }
 
       prevMatchPhaseRef.current = phase;
     }
 
-    // ── New round started (roundNumber bumped + phase back to in-round) ───
     if (
       roundNumber !== null &&
       roundNumber !== prevRoundNumberRef.current &&
@@ -208,7 +242,7 @@ export default function Home() {
       if (r.lastTrickWinner !== null) {
         track("trick_won", {
           roundNumber: match!.roundNumber,
-          trickNumber: r.trickNumber - 1, // trickNumber already incremented
+          trickNumber: r.trickNumber - 1,
           byHuman: r.lastTrickWinner === 0,
         });
       }
@@ -252,113 +286,199 @@ export default function Home() {
           {sublabel && <p className="text-xs text-gray-400">{sublabel}</p>}
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={toggleMute}
-            className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-800 text-gray-300 hover:text-white text-sm transition-colors"
-            aria-label={muted ? "Unmute" : "Mute"}
-          >
+          <button onClick={toggleMute} className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-800 text-gray-300 hover:text-white text-sm transition-colors" aria-label={muted ? "Unmute" : "Mute"}>
             {muted ? "🔇" : "🔊"}
           </button>
-          <button
-            onClick={() => setShowRules(true)}
-            className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-800 text-gray-300 hover:text-white text-sm font-bold transition-colors"
-            aria-label="Rules"
-          >
-            ?
-          </button>
-          <button
-            onClick={handleReturnToMenu}
-            className="px-4 py-1.5 bg-yellow-500 hover:bg-yellow-400 active:bg-yellow-600 text-gray-900 font-bold rounded-full text-sm transition-colors shadow-lg"
-          >
-            Menu
-          </button>
+          <button onClick={() => setShowRules(true)} className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-800 text-gray-300 hover:text-white text-sm font-bold transition-colors" aria-label="Rules">?</button>
+          <button onClick={handleReturnToMenu} className="px-4 py-1.5 bg-yellow-500 hover:bg-yellow-400 active:bg-yellow-600 text-gray-900 font-bold rounded-full text-sm transition-colors shadow-lg">Menu</button>
         </div>
       </div>
     );
   }
 
-  // ── Difficulty-select / idle screen ───────────────────────────────────────
+  // ── Home screen ───────────────────────────────────────────────────────────
   if (!match) {
     return (
-      <main className="min-h-screen flex flex-col p-4 sm:p-6">
-        <div className="w-full flex items-center justify-between mb-8 flex-shrink-0">
-          <h1 className="text-2xl font-bold tracking-wide text-yellow-400">Judgement</h1>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={toggleMute}
-              className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-800 text-gray-300 hover:text-white text-sm transition-colors"
-              aria-label={muted ? "Unmute" : "Mute"}
-            >
-              {muted ? "🔇" : "🔊"}
-            </button>
-            <button
-              onClick={() => setShowRules(true)}
-              className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-800 text-gray-300 hover:text-white text-sm font-bold transition-colors"
-              aria-label="Rules"
-            >
-              ?
-            </button>
-          </div>
+      <main className="min-h-screen flex flex-col bg-gray-950 overflow-hidden select-none">
+
+        {/* Utility row — top right, unobtrusive */}
+        <div className="flex justify-end gap-2 p-4 flex-shrink-0">
+          <button
+            onClick={toggleMute}
+            className="w-9 h-9 flex items-center justify-center rounded-full bg-gray-800/80 text-gray-400 hover:text-white transition-colors text-sm"
+            aria-label={muted ? "Unmute" : "Mute"}
+          >
+            {muted ? "🔇" : "🔊"}
+          </button>
         </div>
 
-        <div className="flex-1 flex flex-col items-center justify-center gap-6 max-w-sm mx-auto w-full">
-          <div className="text-center mb-2">
-            <p className="text-gray-300 text-base">Choose your difficulty</p>
-          </div>
-
-          <button
-            onClick={() => handleStartMatch("easy")}
-            className="w-full bg-gray-800 hover:bg-gray-700 active:scale-95 rounded-2xl p-5 text-left transition-all border border-gray-700 hover:border-yellow-500/50"
+        {/* ── Hero ── */}
+        <div className="flex-1 flex flex-col items-center justify-center px-8 -mt-8">
+          {/* Suit symbols decoration */}
+          <motion.div
+            initial={{ opacity: 0, y: -12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.55, ease: "easeOut" }}
+            className="flex gap-5 mb-7"
           >
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-lg font-bold text-white">Easy</span>
-              <span className="text-2xl">🃏</span>
-            </div>
-            <p className="text-sm text-gray-400">
-              AI bids conservatively and plays the lowest legal card. Good for learning the rules.
-            </p>
+            <span className="text-4xl text-gray-600">♠</span>
+            <span className="text-4xl text-red-500/50">♥</span>
+            <span className="text-4xl text-red-500/50">♦</span>
+            <span className="text-4xl text-gray-600">♣</span>
+          </motion.div>
+
+          <motion.h1
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.13 }}
+            className="text-6xl font-black text-yellow-400 tracking-tight text-center leading-none"
+          >
+            Judgement
+          </motion.h1>
+
+          <motion.p
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.26 }}
+            className="mt-4 text-gray-400 text-lg tracking-wide text-center font-medium"
+          >
+            Predict. Play. Outsmart.
+          </motion.p>
+        </div>
+
+        {/* ── Primary actions ── */}
+        <motion.div
+          initial={{ opacity: 0, y: 28 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.38 }}
+          className="flex flex-col gap-3 px-6 pb-14 max-w-sm w-full mx-auto"
+        >
+          {/* Play Solo — primary CTA */}
+          <button
+            onClick={() => setSoloFlow(true)}
+            className="w-full py-[18px] bg-yellow-500 hover:bg-yellow-400 active:scale-[0.98] rounded-2xl text-gray-900 font-black text-lg tracking-wide transition-all shadow-xl shadow-yellow-500/20"
+          >
+            Play Solo
           </button>
 
-          <button
-            onClick={() => handleStartMatch("medium")}
-            className="w-full bg-gray-800 hover:bg-gray-700 active:scale-95 rounded-2xl p-5 text-left transition-all border border-gray-700 hover:border-yellow-500/50"
-          >
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-lg font-bold text-white">Medium</span>
-              <span className="text-2xl">🧠</span>
-            </div>
-            <p className="text-sm text-gray-400">
-              AI evaluates hand strength and actively plays to hit its bid — winning when it needs to, ducking when it doesn&apos;t.
-            </p>
-          </button>
-
-          {/* Multiplayer link */}
+          {/* Play With Friends — secondary */}
           <Link
             href="/lobby"
-            className="w-full flex items-center justify-between bg-gray-800 hover:bg-gray-700 active:scale-95 rounded-2xl px-5 py-4 border border-gray-700 hover:border-yellow-500/50 transition-all"
+            className="w-full py-[18px] border-2 border-gray-700 hover:border-gray-500 active:scale-[0.98] rounded-2xl text-white font-bold text-lg transition-all text-center block"
           >
-            <div className="flex items-center gap-3">
-              <span className="text-xl">🌐</span>
-              <div className="text-left">
-                <span className="text-base font-semibold text-white block">Multiplayer</span>
-                <span className="text-xs text-gray-400">Play with friends online</span>
-              </div>
-            </div>
-            <span className="text-gray-500 text-lg">›</span>
+            Play With Friends
           </Link>
 
-          {/* Stats link */}
-          <Link
-            href="/stats"
-            className="w-full flex items-center justify-between bg-gray-800/60 hover:bg-gray-800 active:scale-95 rounded-2xl px-5 py-4 border border-gray-700 hover:border-gray-600 transition-all"
-          >
-            <div className="flex items-center gap-3">
-              <span className="text-xl">📊</span>
-              <span className="text-base font-semibold text-gray-200">Statistics</span>
-            </div>
-            <span className="text-gray-500 text-lg">›</span>
-          </Link>
-        </div>
+          {/* Tertiary links */}
+          <div className="flex items-center justify-center gap-6 pt-1">
+            <Link href="/stats" className="text-gray-500 hover:text-gray-300 text-sm font-medium transition-colors">
+              Statistics
+            </Link>
+            <span className="text-gray-700 text-xs">·</span>
+            <button
+              onClick={() => setShowRules(true)}
+              className="text-gray-500 hover:text-gray-300 text-sm font-medium transition-colors"
+            >
+              Rules
+            </button>
+          </div>
+        </motion.div>
+
+        {/* ── Play Solo bottom sheet ── */}
+        <AnimatePresence>
+          {soloFlow && (
+            <>
+              {/* Backdrop */}
+              <motion.div
+                key="solo-backdrop"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="fixed inset-0 bg-black/70 z-40"
+                onClick={() => setSoloFlow(false)}
+              />
+
+              {/* Sheet */}
+              <motion.div
+                key="solo-sheet"
+                initial={{ y: "100%" }}
+                animate={{ y: 0 }}
+                exit={{ y: "100%" }}
+                transition={{ type: "spring", damping: 30, stiffness: 300 }}
+                className="fixed bottom-0 inset-x-0 bg-gray-900 rounded-t-3xl z-50 px-6 pt-4 pb-12"
+              >
+                {/* Drag handle */}
+                <div className="w-10 h-1 bg-gray-700 rounded-full mx-auto mb-6" />
+
+                <div className="max-w-sm mx-auto">
+                  <h2 className="text-2xl font-black text-white mb-7">Play Solo</h2>
+
+                  {/* ── Player count ── */}
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">
+                    Players
+                  </p>
+                  <div className="grid grid-cols-4 gap-2 mb-7">
+                    {PLAYER_COUNT_OPTIONS.map(({ count, rounds }) => (
+                      <button
+                        key={count}
+                        onClick={() => setSelectedCount(count)}
+                        className={`flex flex-col items-center py-3 rounded-xl border-2 font-semibold transition-all ${
+                          selectedCount === count
+                            ? "bg-yellow-500 border-yellow-400 text-gray-900"
+                            : "bg-gray-800 border-gray-800 text-gray-300 hover:border-gray-600"
+                        }`}
+                      >
+                        <span className="text-xl font-black">{count}</span>
+                        <span className={`text-[11px] mt-0.5 ${selectedCount === count ? "text-yellow-900" : "text-gray-500"}`}>
+                          {rounds} rnds
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* ── Difficulty ── */}
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">
+                    Difficulty
+                  </p>
+                  <div className="grid grid-cols-2 gap-3 mb-8">
+                    {([
+                      { value: "easy" as Difficulty, label: "Easy", emoji: "🃏", desc: "Conservative AI" },
+                      { value: "medium" as Difficulty, label: "Medium", emoji: "🧠", desc: "Strategic AI" },
+                    ]).map(({ value, label, emoji, desc }) => (
+                      <button
+                        key={value}
+                        onClick={() => setSelectedDifficulty(value)}
+                        className={`flex flex-col items-center py-4 rounded-xl border-2 transition-all ${
+                          selectedDifficulty === value
+                            ? "bg-yellow-500 border-yellow-400 text-gray-900"
+                            : "bg-gray-800 border-gray-800 text-gray-300 hover:border-gray-600"
+                        }`}
+                      >
+                        <span className="text-2xl mb-1.5">{emoji}</span>
+                        <span className="font-bold text-sm">{label}</span>
+                        <span className={`text-[11px] mt-0.5 ${selectedDifficulty === value ? "text-yellow-900" : "text-gray-500"}`}>
+                          {desc}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* ── Start ── */}
+                  <button
+                    onClick={() => {
+                      setSoloFlow(false);
+                      handleStartMatch(selectedDifficulty, selectedCount);
+                    }}
+                    className="w-full py-[18px] bg-yellow-500 hover:bg-yellow-400 active:scale-[0.98] rounded-2xl text-gray-900 font-black text-lg tracking-wide transition-all shadow-xl shadow-yellow-500/20"
+                  >
+                    Start Game
+                  </button>
+                </div>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
 
         {showRules && <RulesScreen onClose={() => setShowRules(false)} />}
       </main>
@@ -378,8 +498,9 @@ export default function Home() {
 
   // ── Round result ──────────────────────────────────────────────────────────
   if (match.matchPhase === "round-result") {
+    const numRounds = totalRounds(match.playerCount);
     const handleNextRound = () => {
-      if (match.roundNumber >= TOTAL_ROUNDS) {
+      if (match.roundNumber >= numRounds) {
         setMatch((m) => m && { ...m, matchPhase: "match-complete" });
       } else {
         setMatch((m) => m && startNextRound(m));
@@ -387,7 +508,7 @@ export default function Home() {
     };
     return (
       <main className="min-h-screen flex flex-col p-2 sm:p-4">
-        <Header sublabel={`Round ${match.roundNumber} of ${TOTAL_ROUNDS} complete`} />
+        <Header sublabel={`Round ${match.roundNumber} of ${numRounds} complete`} />
         <RoundResultScreen match={match} onNextRound={handleNextRound} />
         {showRules && <RulesScreen onClose={() => setShowRules(false)} />}
       </main>
@@ -396,11 +517,12 @@ export default function Home() {
 
   // ── Active round ──────────────────────────────────────────────────────────
   const round = match.currentRound!;
+  const numRounds = totalRounds(match.playerCount);
 
   if (round.phase === "bidding") {
     return (
       <main className="min-h-screen flex flex-col p-2 sm:p-4">
-        <Header sublabel={`Round ${match.roundNumber} of ${TOTAL_ROUNDS}`} />
+        <Header sublabel={`Round ${match.roundNumber} of ${numRounds}`} />
         <BiddingScreen
           game={round}
           roundNumber={match.roundNumber}
@@ -415,7 +537,7 @@ export default function Home() {
   if (round.phase === "bid-summary") {
     return (
       <main className="min-h-screen flex flex-col p-2 sm:p-4">
-        <Header sublabel={`Round ${match.roundNumber} of ${TOTAL_ROUNDS}`} />
+        <Header sublabel={`Round ${match.roundNumber} of ${numRounds}`} />
         <BidSummary game={round} roundNumber={match.roundNumber} onStartRound={handleStartRound} />
         {showRules && <RulesScreen onClose={() => setShowRules(false)} />}
       </main>
@@ -424,66 +546,67 @@ export default function Home() {
 
   // ── Playing ───────────────────────────────────────────────────────────────
   const { players, currentTurn, tricksWon, currentTrick, trump, phase, trickNumber, lastTrickWinner, bids, cardsPerPlayer } = round;
-  const [human, aiTop, aiLeft, aiRight] = players;
 
   const leadSuit = currentTrick.length > 0 ? currentTrick[0].card.suit : null;
+  const human = players.find((p) => p.isHuman)!;
   const humanValidIndices =
     phase === "playing" && currentTurn === 0
       ? getValidCardIndices(human.hand, leadSuit)
       : undefined;
 
+  const { topRow, leftPlayer, rightPlayer } = getTableLayout(players);
+
   return (
     <main className="min-h-screen flex flex-col items-center justify-between p-2 sm:p-4 overflow-hidden">
+      {/* Header */}
       <div className="w-full flex items-center justify-between mb-1 flex-shrink-0">
         <div>
           <h1 className="text-xl font-bold tracking-wide text-yellow-400">Judgement</h1>
           <p className="text-xs text-gray-400">
-            Round {match.roundNumber}/{TOTAL_ROUNDS} · Trick {Math.min(trickNumber, cardsPerPlayer)}/{cardsPerPlayer}
+            Round {match.roundNumber}/{numRounds} · Trick {Math.min(trickNumber, cardsPerPlayer)}/{cardsPerPlayer}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={toggleMute}
-            className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-800 text-gray-300 hover:text-white text-sm transition-colors"
-            aria-label={muted ? "Unmute" : "Mute"}
-          >
+          <button onClick={toggleMute} className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-800 text-gray-300 hover:text-white text-sm transition-colors" aria-label={muted ? "Unmute" : "Mute"}>
             {muted ? "🔇" : "🔊"}
           </button>
-          <button
-            onClick={() => setShowRules(true)}
-            className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-800 text-gray-300 hover:text-white text-sm font-bold transition-colors"
-            aria-label="Rules"
-          >
-            ?
-          </button>
-          <button
-            onClick={handleReturnToMenu}
-            className="px-4 py-1.5 bg-yellow-500 hover:bg-yellow-400 active:bg-yellow-600 text-gray-900 font-bold rounded-full text-sm transition-colors shadow-lg"
-          >
-            Menu
-          </button>
+          <button onClick={() => setShowRules(true)} className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-800 text-gray-300 hover:text-white text-sm font-bold transition-colors" aria-label="Rules">?</button>
+          <button onClick={handleReturnToMenu} className="px-4 py-1.5 bg-yellow-500 hover:bg-yellow-400 active:bg-yellow-600 text-gray-900 font-bold rounded-full text-sm transition-colors shadow-lg">Menu</button>
         </div>
       </div>
 
       <div className="flex-1 w-full flex flex-col items-center justify-between gap-1 max-w-lg mx-auto">
-        <PlayerArea
-          player={aiTop}
-          position="top"
-          isCurrentTurn={currentTurn === aiTop.id}
-          tricksWon={tricksWon[aiTop.id]}
-          bid={bids[aiTop.id]}
-          matchScore={match.scores[aiTop.id]}
-        />
 
+        {/* ── Top row: 1–3 AI players ── */}
+        <div className="flex items-start justify-center gap-2 w-full">
+          {topRow.map((p) => (
+            <PlayerArea
+              key={p.id}
+              player={p}
+              position="top"
+              isCurrentTurn={currentTurn === p.id}
+              tricksWon={tricksWon[p.id]}
+              bid={bids[p.id]}
+              matchScore={match.scores[p.id]}
+            />
+          ))}
+        </div>
+
+        {/* ── Middle row: left AI · trick area · right AI ── */}
         <div className="flex flex-row items-center justify-between w-full flex-1">
-          <PlayerArea
-            player={aiLeft}
-            position="left"
-            isCurrentTurn={currentTurn === aiLeft.id}
-            tricksWon={tricksWon[aiLeft.id]}
-            bid={bids[aiLeft.id]}
-            matchScore={match.scores[aiLeft.id]}
-          />
+          {leftPlayer ? (
+            <PlayerArea
+              player={leftPlayer}
+              position="left"
+              isCurrentTurn={currentTurn === leftPlayer.id}
+              tricksWon={tricksWon[leftPlayer.id]}
+              bid={bids[leftPlayer.id]}
+              matchScore={match.scores[leftPlayer.id]}
+            />
+          ) : (
+            <div className="w-10" /> // spacer so trick area stays centered
+          )}
+
           <div className="relative flex items-center justify-center">
             <TrickArea
               trick={currentTrick}
@@ -499,16 +622,22 @@ export default function Home() {
               winningCard={lastTrickWinner !== null ? currentTrick.find((tc) => tc.playerId === lastTrickWinner) ?? null : null}
             />
           </div>
-          <PlayerArea
-            player={aiRight}
-            position="right"
-            isCurrentTurn={currentTurn === aiRight.id}
-            tricksWon={tricksWon[aiRight.id]}
-            bid={bids[aiRight.id]}
-            matchScore={match.scores[aiRight.id]}
-          />
+
+          {rightPlayer ? (
+            <PlayerArea
+              player={rightPlayer}
+              position="right"
+              isCurrentTurn={currentTurn === rightPlayer.id}
+              tricksWon={tricksWon[rightPlayer.id]}
+              bid={bids[rightPlayer.id]}
+              matchScore={match.scores[rightPlayer.id]}
+            />
+          ) : (
+            <div className="w-10" />
+          )}
         </div>
 
+        {/* ── Human ── */}
         <PlayerArea
           player={human}
           position="bottom"

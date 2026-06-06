@@ -1,4 +1,4 @@
-import type { Card, GameState, Rank, Suit } from "./types";
+import type { Card, GameState, PlayerCount, Rank, Suit } from "./types";
 import { sortHand } from "./trick";
 
 const SUITS: Suit[] = ["hearts", "diamonds", "clubs", "spades"];
@@ -27,26 +27,40 @@ function dealCards(deck: Card[], numPlayers: number, cardsPerPlayer: number): Ca
 
 /**
  * Creates a GameState for round `roundNumber` with the given dealer.
- * Round N deals N cards to each of 4 players.
+ * Round N deals N cards to each of `playerCount` players.
+ * Player 0 is always the human; 1..N-1 are AI.
  */
-export function initRound(roundNumber: number, dealer: number): GameState {
+export function initRound(
+  roundNumber: number,
+  dealer: number,
+  playerCount: PlayerCount = 4
+): GameState {
   const deck = shuffleDeck(createDeck());
   const cardsPerPlayer = roundNumber;
-  const hands = dealCards(deck, 4, cardsPerPlayer);
+  const hands = dealCards(deck, playerCount, cardsPerPlayer);
 
   // Trump card: top of a separately shuffled deck (simulates flipping after deal)
   const trumpCard = shuffleDeck(createDeck())[0];
   const trump = trumpCard.suit;
 
-  const players = [
-    { id: 0, name: "You", isHuman: true, hand: sortHand(hands[0]) },
-    { id: 1, name: "Player 2", isHuman: false, hand: hands[1] },
-    { id: 2, name: "Player 3", isHuman: false, hand: hands[2] },
-    { id: 3, name: "Player 4", isHuman: false, hand: hands[3] },
-  ];
+  const players = Array.from({ length: playerCount }, (_, i) => ({
+    id: i,
+    name: i === 0 ? "You" : `Player ${i + 1}`,
+    isHuman: i === 0,
+    hand: i === 0 ? sortHand(hands[i]) : hands[i],
+  }));
 
   // Bidding starts left of dealer; dealer bids last
-  const bidOrder = [1, 2, 3, 0].map((offset) => (dealer + offset) % 4);
+  const bidOrder = Array.from({ length: playerCount }, (_, offset) =>
+    (dealer + offset + 1) % playerCount
+  );
+
+  const bids: Record<number, number | undefined> = {};
+  const tricksWon: Record<number, number> = {};
+  for (let i = 0; i < playerCount; i++) {
+    bids[i] = undefined;
+    tricksWon[i] = 0;
+  }
 
   return {
     players,
@@ -56,11 +70,11 @@ export function initRound(roundNumber: number, dealer: number): GameState {
     dealer,
     bidOrder,
     biddingTurnIndex: 0,
-    bids: { 0: undefined, 1: undefined, 2: undefined, 3: undefined },
+    bids,
     currentTrick: [],
     trickLeader: bidOrder[0],
     currentTurn: bidOrder[0],
-    tricksWon: { 0: 0, 1: 0, 2: 0, 3: 0 },
+    tricksWon,
     phase: "bidding",
     trickNumber: 1,
     lastTrickWinner: null,

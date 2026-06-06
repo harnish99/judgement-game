@@ -1,5 +1,5 @@
 import type { MatchState } from "@/game/types";
-import { TOTAL_ROUNDS } from "@/game/match";
+import { totalRounds } from "@/game/match";
 
 interface MatchSummaryProps {
   match: MatchState;
@@ -14,9 +14,12 @@ export default function MatchSummary({ match, onPlayAgain }: MatchSummaryProps) 
   const winner = sorted[0];
   const humanWon = winner.isHuman;
   const humanScore = scores[0] ?? 0;
-  const maxPossible = Array.from({ length: TOTAL_ROUNDS }, (_, i) => 10 + (i + 1)).reduce(
-    (a, b) => a + b, 0
-  ); // 10+1 + 10+2 + … + 10+13 = 221
+  const numRounds = totalRounds(match.playerCount);
+  // Max possible score: sum of (10 + roundCards) for all rounds
+  const maxPossible = Array.from({ length: numRounds }, (_, i) => 10 + (i + 1)).reduce(
+    (a, b) => a + b,
+    0
+  );
 
   return (
     <div className="flex-1 w-full flex flex-col items-center gap-4 max-w-lg mx-auto px-2 overflow-y-auto pb-6">

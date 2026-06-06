@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import type { Player, Suit, TrickCard } from "@/game/types";
+import type { Player, PlayerCount, Suit, TrickCard } from "@/game/types";
 import Card from "./Card";
 
 interface TrickAreaProps {
@@ -21,41 +21,97 @@ const SUIT_COLORS: Record<Suit, string> = {
   clubs: "text-gray-300", spades: "text-gray-300",
 };
 
-// Grid placement for each player (compass positions)
-const PLAYER_SLOT: Record<number, { gridCol: string; gridRow: string }> = {
-  1: { gridCol: "col-start-2", gridRow: "row-start-1" }, // north
-  2: { gridCol: "col-start-1", gridRow: "row-start-2" }, // west
-  0: { gridCol: "col-start-2", gridRow: "row-start-3" }, // south (human)
-  3: { gridCol: "col-start-3", gridRow: "row-start-2" }, // east
+// ─── Per-player-count grid positions (col, row — 1-indexed in a 3×3 grid) ────
+
+type GridPos = { col: number; row: number };
+
+const GRID_POS: Record<PlayerCount, Record<number, GridPos>> = {
+  3: {
+    1: { col: 2, row: 1 }, // north
+    2: { col: 3, row: 2 }, // east
+    0: { col: 2, row: 3 }, // south (human)
+  },
+  4: {
+    1: { col: 2, row: 1 }, // north
+    2: { col: 1, row: 2 }, // west
+    3: { col: 3, row: 2 }, // east
+    0: { col: 2, row: 3 }, // south (human)
+  },
+  5: {
+    2: { col: 1, row: 1 }, // north-west
+    1: { col: 2, row: 1 }, // north
+    3: { col: 3, row: 1 }, // north-east
+    4: { col: 3, row: 2 }, // east
+    0: { col: 2, row: 3 }, // south (human)
+  },
+  6: {
+    2: { col: 1, row: 1 }, // north-west
+    1: { col: 2, row: 1 }, // north
+    3: { col: 3, row: 1 }, // north-east
+    4: { col: 1, row: 2 }, // west
+    5: { col: 3, row: 2 }, // east
+    0: { col: 2, row: 3 }, // south (human)
+  },
 };
 
-// Each player's card enters FROM their direction
-const ENTER_FROM: Record<number, { x?: number; y?: number }> = {
-  0: { y: 48 },    // south → slide up
-  1: { y: -48 },   // north → slide down
-  2: { x: -48 },   // west → slide right
-  3: { x: 48 },    // east → slide left
+// ─── Card entry directions ────────────────────────────────────────────────────
+
+type Delta = { x?: number; y?: number };
+
+const ENTER_FROM: Record<PlayerCount, Record<number, Delta>> = {
+  3: { 1: { y: -48 }, 2: { x: 48 },  0: { y: 48 } },
+  4: { 1: { y: -48 }, 2: { x: -48 }, 3: { x: 48 },  0: { y: 48 } },
+  5: {
+    2: { x: -48, y: -48 }, 1: { y: -48 }, 3: { x: 48, y: -48 },
+    4: { x: 48 },           0: { y: 48 },
+  },
+  6: {
+    2: { x: -48, y: -48 }, 1: { y: -48 }, 3: { x: 48, y: -48 },
+    4: { x: -48 },         5: { x: 48 },  0: { y: 48 },
+  },
 };
 
-// Cards exit TOWARD the winner's position
-const EXIT_TOWARD: Record<number, { x?: number; y?: number; opacity: number }> = {
-  0: { y: 64,  opacity: 0 },
-  1: { y: -64, opacity: 0 },
-  2: { x: -64, opacity: 0 },
-  3: { x: 64,  opacity: 0 },
+// ─── Exit directions (cards fly toward winner's position) ─────────────────────
+
+type ExitDelta = { x?: number; y?: number; opacity: number };
+
+const EXIT_TOWARD: Record<PlayerCount, Record<number, ExitDelta>> = {
+  3: { 1: { y: -64, opacity: 0 }, 2: { x: 64, opacity: 0 },  0: { y: 64, opacity: 0 } },
+  4: { 1: { y: -64, opacity: 0 }, 2: { x: -64, opacity: 0 }, 3: { x: 64, opacity: 0 }, 0: { y: 64, opacity: 0 } },
+  5: {
+    2: { x: -64, y: -64, opacity: 0 }, 1: { y: -64, opacity: 0 }, 3: { x: 64, y: -64, opacity: 0 },
+    4: { x: 64, opacity: 0 },          0: { y: 64, opacity: 0 },
+  },
+  6: {
+    2: { x: -64, y: -64, opacity: 0 }, 1: { y: -64, opacity: 0 }, 3: { x: 64, y: -64, opacity: 0 },
+    4: { x: -64, opacity: 0 },        5: { x: 64, opacity: 0 },   0: { y: 64, opacity: 0 },
+  },
 };
+
+const COL_CLASS = ["", "col-start-1", "col-start-2", "col-start-3"] as const;
+const ROW_CLASS = ["", "row-start-1", "row-start-2", "row-start-3"] as const;
 
 export default function TrickArea({
   trick, trump, phase, lastTrickWinner, players, trickNumber,
 }: TrickAreaProps) {
+  const playerCount = (players.length as PlayerCount) in GRID_POS
+    ? (players.length as PlayerCount)
+    : 4;
+
   const trickMap = new Map(trick.map((tc) => [tc.playerId, tc]));
   const winnerName = lastTrickWinner !== null
     ? (players.find((p) => p.id === lastTrickWinner)?.name ?? "")
     : null;
 
   const isBetweenTricks = phase === "between-tricks";
-  const exitOffset: { x?: number; y?: number; opacity: number } =
-    lastTrickWinner !== null ? EXIT_TOWARD[lastTrickWinner] : { opacity: 0 };
+  const gridPositions = GRID_POS[playerCount];
+  const enterFrom = ENTER_FROM[playerCount];
+  const exitToward = EXIT_TOWARD[playerCount];
+
+  const exitOffset: ExitDelta =
+    lastTrickWinner !== null && exitToward[lastTrickWinner]
+      ? exitToward[lastTrickWinner]
+      : { opacity: 0 };
 
   return (
     <div className="flex flex-col items-center gap-1">
@@ -67,16 +123,18 @@ export default function TrickArea({
         </span>
       </div>
 
-      {/* 3×3 grid — N/S/E/W cards, center for winner label */}
+      {/* 3×3 grid — player cards at compass positions, center = winner label */}
       <div className="grid grid-cols-3 grid-rows-3 gap-1 w-36 h-36">
-        {[0, 1, 2, 3].map((pid) => {
-          const slot = PLAYER_SLOT[pid];
-          const tc = trickMap.get(pid);
+        {players.map((p) => {
+          const pos = gridPositions[p.id];
+          if (!pos) return null;
+          const tc = trickMap.get(p.id);
+          const enter = enterFrom[p.id] ?? {};
 
           return (
             <div
-              key={pid}
-              className={`${slot.gridCol} ${slot.gridRow} flex items-center justify-center`}
+              key={p.id}
+              className={`${COL_CLASS[pos.col]} ${ROW_CLASS[pos.row]} flex items-center justify-center`}
             >
               {/* Placeholder when no card played yet */}
               {!tc && (
@@ -86,16 +144,15 @@ export default function TrickArea({
               <AnimatePresence mode="sync">
                 {tc && (
                   <motion.div
-                    // Unique key across all tricks so each card gets its own animation
                     key={`${trickNumber}-${tc.card.suit}-${tc.card.rank}`}
-                    initial={{ ...ENTER_FROM[pid], opacity: 0, scale: 0.85 }}
+                    initial={{ ...enter, opacity: 0, scale: 0.85 }}
                     animate={{
                       x: 0,
                       y: 0,
                       opacity: 1,
-                      scale: isBetweenTricks && pid === lastTrickWinner ? 1.15 : 1,
+                      scale: isBetweenTricks && p.id === lastTrickWinner ? 1.15 : 1,
                       filter:
-                        isBetweenTricks && pid === lastTrickWinner
+                        isBetweenTricks && p.id === lastTrickWinner
                           ? [
                               "drop-shadow(0 0 0px rgba(234,179,8,0))",
                               "drop-shadow(0 0 10px rgba(234,179,8,0.95))",

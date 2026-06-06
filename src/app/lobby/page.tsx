@@ -3,8 +3,16 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useRoom } from "@/hooks/useRoom";
+import type { PlayerCount } from "@/game/types";
 
 type Tab = "create" | "join";
+
+const PLAYER_COUNT_OPTIONS: { count: PlayerCount; rounds: number }[] = [
+  { count: 3, rounds: 17 },
+  { count: 4, rounds: 13 },
+  { count: 5, rounds: 10 },
+  { count: 6, rounds: 8 },
+];
 
 export default function LobbyPage() {
   const router = useRouter();
@@ -13,6 +21,7 @@ export default function LobbyPage() {
   const [tab, setTab] = useState<Tab>("create");
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
+  const [maxPlayers, setMaxPlayers] = useState<PlayerCount>(4);
   const [loading, setLoading] = useState(false);
   // Local error so it clears on tab switch and doesn't bleed from reconnect
   const [localError, setLocalError] = useState<string | null>(null);
@@ -25,7 +34,7 @@ export default function LobbyPage() {
     setLocalError(null);
     setLoading(true);
     try {
-      const roomCode = await create(name.trim());
+      const roomCode = await create(name.trim(), maxPlayers);
       router.push(`/room/${roomCode}`);
     } catch (err) {
       setLocalError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
@@ -104,6 +113,32 @@ export default function LobbyPage() {
               autoComplete="off"
               autoFocus
             />
+          </div>
+
+          {/* Player count selector */}
+          <div>
+            <label className="block text-xs text-gray-400 mb-1.5 uppercase tracking-wide">
+              Players
+            </label>
+            <div className="grid grid-cols-4 gap-2">
+              {PLAYER_COUNT_OPTIONS.map(({ count, rounds }) => (
+                <button
+                  key={count}
+                  type="button"
+                  onClick={() => setMaxPlayers(count)}
+                  className={`flex flex-col items-center py-2.5 rounded-xl text-sm font-semibold transition-all ${
+                    maxPlayers === count
+                      ? "bg-yellow-500 text-gray-900 shadow"
+                      : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                  }`}
+                >
+                  <span className="text-base font-bold">{count}</span>
+                  <span className={`text-[10px] mt-0.5 ${maxPlayers === count ? "text-gray-700" : "text-gray-500"}`}>
+                    {rounds} rnds
+                  </span>
+                </button>
+              ))}
+            </div>
           </div>
 
           <p className="text-xs text-gray-500 -mt-1">

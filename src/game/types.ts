@@ -57,11 +57,16 @@ export type MatchPhase = "idle" | "in-round" | "round-result" | "match-complete"
 
 export type Difficulty = "easy" | "medium";
 
+/** 3–6 inclusive. Enforced at initMatch time. */
+export type PlayerCount = 3 | 4 | 5 | 6;
+
 export interface MatchState {
   matchPhase: MatchPhase;
   roundNumber: number;
   dealer: number;
   difficulty: Difficulty;
+  /** Total seats (human + AI for single-player). Defaults to 4 for old saves. */
+  playerCount: PlayerCount;
   scores: Record<number, number>;
   roundHistory: RoundResult[];
   currentRound: GameState | null;

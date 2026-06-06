@@ -1,19 +1,41 @@
 import { initRound } from "./deck";
 import { calculateRoundScores } from "./scoring";
-import type { Difficulty, MatchState, RoundResult } from "./types";
+import type { Difficulty, MatchState, PlayerCount, RoundResult } from "./types";
 
-export const TOTAL_ROUNDS = 13;
+// ─── Round / match constants ──────────────────────────────────────────────────
 
-export function initMatch(difficulty: Difficulty): MatchState {
-  const dealer = Math.floor(Math.random() * 4);
+/** Maximum cards dealt per player in a game with `playerCount` players. */
+export function maxCardsPerRound(playerCount: PlayerCount): number {
+  return Math.floor(52 / playerCount);
+}
+
+/**
+ * Total number of rounds in a match.
+ * Rounds go 1 card → 2 cards → … → maxCardsPerRound cards.
+ */
+export function totalRounds(playerCount: PlayerCount): number {
+  return Math.floor(52 / playerCount);
+}
+
+// ─── Match lifecycle ──────────────────────────────────────────────────────────
+
+export function initMatch(
+  difficulty: Difficulty,
+  playerCount: PlayerCount = 4
+): MatchState {
+  const dealer = Math.floor(Math.random() * playerCount);
+  const scores: Record<number, number> = {};
+  for (let i = 0; i < playerCount; i++) scores[i] = 0;
+
   return {
     matchPhase: "in-round",
     roundNumber: 1,
     dealer,
     difficulty,
-    scores: { 0: 0, 1: 0, 2: 0, 3: 0 },
+    playerCount,
+    scores,
     roundHistory: [],
-    currentRound: initRound(1, dealer),
+    currentRound: initRound(1, dealer, playerCount),
   };
 }
 
@@ -34,9 +56,10 @@ export function finalizeRound(match: MatchState): MatchState {
   console.log("Round finalized");
 
   const roundScores = calculateRoundScores(round.bids, round.tricksWon);
+  const playerIds = round.players.map((p) => p.id);
 
   const newScores: Record<number, number> = { ...match.scores };
-  for (const id of [0, 1, 2, 3]) {
+  for (const id of playerIds) {
     const earned = roundScores[id] ?? 0;
     if (earned > 0) {
       const player = round.players.find((p) => p.id === id)!;
@@ -53,7 +76,7 @@ export function finalizeRound(match: MatchState): MatchState {
     roundScores,
   };
 
-  const isMatchComplete = match.roundNumber >= TOTAL_ROUNDS;
+  const isMatchComplete = match.roundNumber >= totalRounds(match.playerCount);
 
   return {
     ...match,
@@ -68,12 +91,12 @@ export function finalizeRound(match: MatchState): MatchState {
 /** Advances dealer, increments roundNumber, deals the next round. */
 export function startNextRound(match: MatchState): MatchState {
   const nextRound = match.roundNumber + 1;
-  const nextDealer = (match.dealer + 1) % 4;
+  const nextDealer = (match.dealer + 1) % match.playerCount;
   return {
     ...match,
     matchPhase: "in-round",
     roundNumber: nextRound,
     dealer: nextDealer,
-    currentRound: initRound(nextRound, nextDealer),
+    currentRound: initRound(nextRound, nextDealer, match.playerCount),
   };
 }

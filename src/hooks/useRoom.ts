@@ -21,6 +21,8 @@ import {
   startGame,
   loadSession,
   clearSession,
+  fetchPlayersByRoomId,
+  fetchRoomById,
 } from "@/lib/multiplayer/roomService";
 import { subscribeToRoom } from "@/lib/multiplayer/realtimeService";
 import type {
@@ -29,6 +31,7 @@ import type {
   Room,
   RoomState,
 } from "@/lib/multiplayer/types";
+import type { PlayerCount } from "@/game/types";
 
 const HEARTBEAT_INTERVAL_MS = 30_000;
 
@@ -41,7 +44,15 @@ const INITIAL_STATE: RoomState = {
 };
 
 export function useRoom() {
-  const [state, setState] = useState<RoomState>(INITIAL_STATE);
+  // Start in "reconnecting" immediately if a session is stored, so the room
+  // page never flashes the error screen during the brief window before the
+  // reconnect useEffect fires.
+  const [state, setState] = useState<RoomState>(() => {
+    const session = typeof window !== "undefined" ? loadSession() : null;
+    return session
+      ? { ...INITIAL_STATE, connectionStatus: "reconnecting" }
+      : INITIAL_STATE;
+  });
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -208,14 +219,53 @@ export function useRoom() {
     };
   }, []);
 
+  // ── Polling fallback: refresh player list every 4 s ──────────────────────────
+  // Supabase Realtime events can occasionally be missed. This ensures the lobby
+  // always shows the current connected players without relying solely on events.
+
+  useEffect(() => {
+    const roomId = state.room?.id;
+    if (!roomId) return;
+
+    let active = true;
+
+    async function refresh() {
+      if (!active) return;
+      try {
+        const [players, room] = await Promise.all([
+          fetchPlayersByRoomId(roomId!),
+          fetchRoomById(roomId!),
+        ]);
+        setState((s) => {
+          if (s.room?.id !== roomId) return s;
+          return {
+            ...s,
+            players,
+            // Only update room if we got a valid row back
+            ...(room ? { room } : {}),
+          };
+        });
+      } catch {
+        // silent — realtime is the primary path
+      }
+    }
+
+    refresh(); // immediate initial seed
+    const id = setInterval(refresh, 4000);
+    return () => {
+      active = false;
+      clearInterval(id);
+    };
+  }, [state.room?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Public API ───────────────────────────────────────────────────────────────
 
   // create and join throw a user-friendly Error on failure so callers can
   // catch it directly — avoids stale-closure reads of the `error` state field.
-  const create = useCallback(async (hostName: string): Promise<string> => {
+  const create = useCallback(async (hostName: string, maxPlayers: PlayerCount = 4): Promise<string> => {
     setState((s) => ({ ...s, connectionStatus: "connecting", error: null }));
     try {
-      const { room, player } = await createRoom(hostName);
+      const { room, player } = await createRoom(hostName, maxPlayers);
       applySession(room, player, [player]);
       return room.code;
     } catch (err) {
@@ -253,8 +303,15 @@ export function useRoom() {
     if (!currentPlayer || !room) return;
     try {
       await startGame(room.id, currentPlayer.id);
+      // Optimistically reflect the status change so the host doesn't see a
+      // stale "waiting" screen while waiting for the Realtime event.
+      setState((s) =>
+        s.room ? { ...s, room: { ...s.room, status: "playing" } } : s
+      );
     } catch (err) {
-      setError(getErrorMessage(err));
+      // Re-throw a user-friendly message so RoomLobby can show it inline
+      // WITHOUT overwriting connectionStatus (this is not a connection error).
+      throw new Error(getErrorMessage(err));
     }
   }, [state]);
 
@@ -273,7 +330,7 @@ function getErrorMessage(err: unknown): string {
   if (err instanceof Error) {
     switch (err.message) {
       case "ROOM_NOT_FOUND":       return "Room not found. Check the code and try again.";
-      case "ROOM_FULL":            return "This room is full (4 players max).";
+      case "ROOM_FULL":            return "This room is full.";
       case "ROOM_ALREADY_STARTED": return "This game has already started.";
       case "NAME_TAKEN":           return "That name is already taken in this room.";
       case "NOT_HOST":             return "Only the host can start the game.";

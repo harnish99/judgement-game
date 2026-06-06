@@ -1,11 +1,14 @@
 "use client";
 
-import { useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useRoom } from "@/hooks/useRoom";
 import RoomLobby from "@/components/multiplayer/RoomLobby";
 import ConnectionStatusBadge from "@/components/multiplayer/ConnectionStatus";
+import MultiplayerGame from "@/components/multiplayer/MultiplayerGame";
 import { loadSession } from "@/lib/multiplayer/roomService";
+import { initGameState } from "@/lib/multiplayer/gameService";
+import type { PlayerCount } from "@/game/types";
 
 export default function RoomPage() {
   const params = useParams<{ code: string }>();
@@ -18,15 +21,19 @@ export default function RoomPage() {
     currentPlayer,
     connectionStatus,
     error,
-    join,
     leave,
     start,
   } = useRoom();
 
+  // Defer all session-dependent rendering until after hydration.
+  // SSR sees connectionStatus:"idle" (no localStorage); client may start as
+  // "reconnecting". Without this guard the two renders differ → hydration error.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+
   // ── Guard: redirect if room code doesn't match the stored session ────────────
   useEffect(() => {
     if (connectionStatus === "idle") {
-      // No active session — check localStorage; if mismatch, go to lobby
       const session = loadSession();
       if (!session || session.roomCode.toUpperCase() !== code) {
         router.replace(`/lobby?code=${code}`);
@@ -34,13 +41,36 @@ export default function RoomPage() {
     }
   }, [connectionStatus, code, router]);
 
-  // ── When room status moves to 'playing', navigate to the game ───────────────
-  useEffect(() => {
-    if (room?.status === "playing") {
-      // Phase 2: router.push(`/game/${code}`)
-      // For now, show a banner — gameplay sync not implemented yet
-    }
-  }, [room?.status, code, router]);
+  // ── Host start handler: transition room + seed game state ───────────────────
+  const handleStart = useCallback(async () => {
+    if (!currentPlayer || !room) return;
+
+    // 1. Mark room as playing in DB
+    await start();
+
+    // 2. Build player name list in seat order and initialize game state
+    const sortedPlayers = [...players].sort((a, b) => a.playerOrder - b.playerOrder);
+    const playerNames = sortedPlayers.map((p) => p.name);
+    await initGameState(room.id, playerNames, room.maxPlayers as PlayerCount);
+  }, [start, players, currentPlayer, room]);
+
+  // ── Leave handler ────────────────────────────────────────────────────────────
+  const handleLeave = useCallback(async () => {
+    await leave();
+    router.push("/");
+  }, [leave, router]);
+
+  // ── Pre-mount: purely static spinner so SSR and first client render match ────
+  // SSR sees connectionStatus:"idle"; the client lazy-init may see "reconnecting".
+  // Any dynamic content here would cause a hydration mismatch, so render nothing
+  // but the spinner until useEffect has fired and we know the true state.
+  if (!mounted) {
+    return (
+      <main className="min-h-screen flex flex-col items-center justify-center gap-4 p-6">
+        <div className="w-10 h-10 border-2 border-yellow-500 border-t-transparent rounded-full animate-spin" />
+      </main>
+    );
+  }
 
   // ── Loading / reconnecting ────────────────────────────────────────────────────
   if (connectionStatus === "reconnecting" || (connectionStatus === "connecting" && !room)) {
@@ -71,18 +101,15 @@ export default function RoomPage() {
     );
   }
 
-  // ── Game started banner ───────────────────────────────────────────────────────
-  if (room?.status === "playing") {
+  // ── Game in progress ──────────────────────────────────────────────────────────
+  if (room?.status === "playing" && currentPlayer) {
     return (
-      <main className="min-h-screen flex flex-col items-center justify-center gap-5 p-6 max-w-sm mx-auto text-center">
-        <span className="text-5xl">🃏</span>
-        <h2 className="text-lg font-bold text-yellow-400">Game Starting…</h2>
-        <p className="text-sm text-gray-400">
-          Gameplay sync is coming in Phase 2. The room is ready with{" "}
-          {players.filter((p) => p.status === "connected").length} players.
-        </p>
-        <ConnectionStatusBadge status={connectionStatus} />
-      </main>
+      <MultiplayerGame
+        roomId={room.id}
+        myPlayerOrder={currentPlayer.playerOrder}
+        isHost={currentPlayer.isHost}
+        onLeave={handleLeave}
+      />
     );
   }
 
@@ -107,11 +134,8 @@ export default function RoomPage() {
         players={players}
         currentPlayer={currentPlayer}
         connectionStatus={connectionStatus}
-        onStart={start}
-        onLeave={async () => {
-          await leave();
-          router.push("/");
-        }}
+        onStart={handleStart}
+        onLeave={handleLeave}
       />
     </main>
   );

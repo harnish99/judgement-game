@@ -15,6 +15,7 @@ import type {
   RoomServiceError,
   StoredSession,
 } from "./types";
+import type { PlayerCount } from "@/game/types";
 
 // ─── localStorage key ─────────────────────────────────────────────────────────
 
@@ -104,7 +105,7 @@ function serviceError(code: RoomServiceError): Error {
  * Create a new room and seat the host as player 0.
  * Retries up to 5 times if the random code collides.
  */
-export async function createRoom(hostName: string): Promise<CreateRoomResult> {
+export async function createRoom(hostName: string, maxPlayers: PlayerCount = 4): Promise<CreateRoomResult> {
   const trimmed = hostName.trim().slice(0, 20);
   if (!trimmed) throw serviceError("UNKNOWN");
 
@@ -113,7 +114,7 @@ export async function createRoom(hostName: string): Promise<CreateRoomResult> {
     const code = generateCode();
     const { data, error } = await supabase
       .from("rooms")
-      .insert({ code, status: "waiting", max_players: 4 })
+      .insert({ code, status: "waiting", max_players: maxPlayers })
       .select()
       .single();
 
@@ -247,10 +248,11 @@ export async function reconnectPlayer(
     .select("*")
     .eq("id", playerRow.room_id)
     .eq("code", session.roomCode.toUpperCase())
-    .gt("expires_at", new Date().toISOString())
     .single();
 
   if (roomError || !roomRow) return null;
+  // Don't reconnect to a room that has already expired or been deleted
+  if (roomRow.expires_at && new Date(roomRow.expires_at) < new Date()) return null;
 
   // Mark as connected again
   const { data: updatedPlayer } = await supabase
@@ -313,6 +315,8 @@ export async function leaveRoom(
 
   if (leavingPlayer?.is_host) {
     const newHost = remaining[0];
+    // Demote the old host first, then promote the new one
+    await supabase.from("players").update({ is_host: false }).eq("id", playerId);
     await supabase.from("players").update({ is_host: true }).eq("id", newHost.id);
     await supabase
       .from("rooms")
@@ -333,26 +337,24 @@ export async function startGame(
   roomId: string,
   hostPlayerId: string
 ): Promise<void> {
-  // Verify caller is host
+  // Verify caller is marked as host in the players table
+  const { data: caller } = await supabase
+    .from("players")
+    .select("is_host")
+    .eq("id", hostPlayerId)
+    .single();
+
+  if (!caller?.is_host) throw serviceError("NOT_HOST");
+
+  // Verify room still exists and hasn't already started
   const { data: room } = await supabase
     .from("rooms")
-    .select("host_player_id, status")
+    .select("status")
     .eq("id", roomId)
     .single();
 
   if (!room) throw serviceError("ROOM_NOT_FOUND");
-  if (room.host_player_id !== hostPlayerId) throw serviceError("NOT_HOST");
   if (room.status !== "waiting") throw serviceError("ROOM_ALREADY_STARTED");
-
-  const { data: connected } = await supabase
-    .from("players")
-    .select("id")
-    .eq("room_id", roomId)
-    .eq("status", "connected");
-
-  if (!connected || connected.length < 2) {
-    throw new Error("Need at least 2 players to start");
-  }
 
   await supabase.from("rooms").update({ status: "playing" }).eq("id", roomId);
 }
@@ -392,4 +394,35 @@ export async function fetchRoomWithPlayers(code: string): Promise<{
     room: mapRoom(roomRow),
     players: (playerRows ?? []).map(mapPlayer),
   };
+}
+
+// ─── fetchRoomById ────────────────────────────────────────────────────────────
+
+/**
+ * Fetch a room row by ID.
+ * Used as a polling fallback so clients detect status changes (e.g. "playing")
+ * even if the Realtime event was missed.
+ */
+export async function fetchRoomById(roomId: string): Promise<Room | null> {
+  const { data } = await supabase
+    .from("rooms")
+    .select("*")
+    .eq("id", roomId)
+    .single();
+  return data ? mapRoom(data) : null;
+}
+
+// ─── fetchPlayersByRoomId ─────────────────────────────────────────────────────
+
+/**
+ * Fetch all players for a room.
+ * Used as a polling fallback in case Realtime events are missed.
+ */
+export async function fetchPlayersByRoomId(roomId: string): Promise<MultiplayerPlayer[]> {
+  const { data } = await supabase
+    .from("players")
+    .select("*")
+    .eq("room_id", roomId)
+    .order("player_order");
+  return (data ?? []).map(mapPlayer);
 }

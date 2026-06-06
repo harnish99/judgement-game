@@ -25,15 +25,23 @@ export default function RoomLobby({
   const [starting, setStarting] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
 
   const connectedPlayers = players.filter((p) => p.status === "connected");
   const isHost = currentPlayer.isHost;
-  const canStart = isHost && connectedPlayers.length >= 2;
+  const canStart = isHost && connectedPlayers.length === room.maxPlayers;
+  const playersNeeded = room.maxPlayers - connectedPlayers.length;
 
   async function handleStart() {
     setStarting(true);
-    await onStart();
-    setStarting(false);
+    setStartError(null);
+    try {
+      await onStart();
+    } catch (err) {
+      setStartError(err instanceof Error ? err.message : "Could not start game. Please try again.");
+    } finally {
+      setStarting(false);
+    }
   }
 
   async function handleLeave() {
@@ -43,10 +51,27 @@ export default function RoomLobby({
   }
 
   function copyCode() {
-    navigator.clipboard.writeText(room.code).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
+    navigator.clipboard.writeText(room.code)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      })
+      .catch(() => {
+        // Fallback for browsers that deny clipboard-write permission
+        try {
+          const el = document.createElement("textarea");
+          el.value = room.code;
+          el.style.cssText = "position:fixed;opacity:0;pointer-events:none";
+          document.body.appendChild(el);
+          el.select();
+          document.execCommand("copy");
+          document.body.removeChild(el);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        } catch {
+          // Both methods failed — silently ignore
+        }
+      });
   }
 
   // Build a stable 4-slot array keyed by seat index
@@ -116,7 +141,12 @@ export default function RoomLobby({
           </button>
           {!canStart && (
             <p className="text-xs text-gray-500 text-center">
-              Need at least 2 players to start
+              Waiting for {playersNeeded} more player{playersNeeded !== 1 ? "s" : ""} to join
+            </p>
+          )}
+          {startError && (
+            <p className="text-xs text-red-400 text-center bg-red-900/20 border border-red-900/40 rounded-xl px-3 py-2">
+              {startError}
             </p>
           )}
         </div>
