@@ -3,7 +3,11 @@
     "allow": [
       "Bash(npx create-next-app@latest . --typescript --tailwind --app --no-eslint --no-src-dir --import-alias \"@/*\")",
       "Bash(ls /opt/homebrew/bin/ | grep -E \"node|npm|pnpm|bun|npx\" 2>&1)",
-      "Bash(find /usr/local /opt -name \"node\" -o -name \"npm\" -o -name \"npx\" 2>/dev/null | head -10)"
+      "Bash(find /usr/local /opt -name \"node\" -o -name \"npm\" -o -name \"npx\" 2>/dev/null | head -10)",
+      "Bash(npm run *)",
+      "Bash(node -e \"require\\('dotenv'\\).config\\({path:'.env.local'}\\); console.log\\(process.env.NEXT_PUBLIC_SUPABASE_URL\\)\")",
+      "Bash(node -e \"const fs=require\\('fs'\\); const c=fs.readFileSync\\('.env.local','utf8'\\); console.log\\(JSON.stringify\\(c.slice\\(0,200\\)\\)\\)\")",
+      "mcp__Claude_Preview__preview_start"
     ]
   }
 }

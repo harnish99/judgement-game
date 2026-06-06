@@ -332,6 +332,21 @@ export default function Home() {
             </p>
           </button>
 
+          {/* Multiplayer link */}
+          <Link
+            href="/lobby"
+            className="w-full flex items-center justify-between bg-gray-800 hover:bg-gray-700 active:scale-95 rounded-2xl px-5 py-4 border border-gray-700 hover:border-yellow-500/50 transition-all"
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-xl">🌐</span>
+              <div className="text-left">
+                <span className="text-base font-semibold text-white block">Multiplayer</span>
+                <span className="text-xs text-gray-400">Play with friends online</span>
+              </div>
+            </div>
+            <span className="text-gray-500 text-lg">›</span>
+          </Link>
+
           {/* Stats link */}
           <Link
             href="/stats"
