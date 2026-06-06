@@ -8,8 +8,10 @@
  * local player appear as player 0, matching what those components expect.
  */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useMultiplayerGame } from "@/hooks/useMultiplayerGame";
+import { useTurnTimer } from "@/hooks/useTurnTimer";
+import { useSound } from "@/hooks/useSound";
 import BidSummary from "@/components/BidSummary";
 import BiddingScreen from "@/components/BiddingScreen";
 import MatchSummary from "@/components/MatchSummary";
@@ -17,7 +19,9 @@ import PlayerArea from "@/components/PlayerArea";
 import RoundResultScreen from "@/components/RoundResultScreen";
 import TrickArea from "@/components/TrickArea";
 import TrickWinnerToast from "@/components/TrickWinnerToast";
-import { getValidCardIndices } from "@/game/trick";
+import TurnTimer from "@/components/TurnTimer";
+import { getValidCardIndices, RANK_ORDER } from "@/game/trick";
+import { getForbiddenBid, placeBid } from "@/game/bidding";
 import { totalRounds } from "@/game/match";
 import type { Player } from "@/game/types";
 
@@ -69,6 +73,60 @@ export default function MultiplayerGame({
     handleStartRound,
     handleNextRound,
   } = useMultiplayerGame({ roomId, myPlayerOrder, isHost });
+
+  const { playCardSound, playTimerWarningSound, playTimerExpireSound } = useSound();
+
+  // ── Timer: auto-bid lowest legal bid on expire ─────────────────────────────
+  const handleBidExpire = useCallback(() => {
+    playTimerExpireSound();
+    const r = localMatch?.currentRound;
+    if (!r || r.phase !== "bidding" || r.bidOrder[r.biddingTurnIndex] !== 0) return;
+    const forbidden = getForbiddenBid(r);
+    handleBid(forbidden === 0 ? 1 : 0);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [localMatch?.currentRound, playTimerExpireSound, handleBid]);
+
+  // ── Timer: auto-play lowest legal card on expire ──────────────────────────
+  const handlePlayExpire = useCallback(() => {
+    playTimerExpireSound();
+    const r = localMatch?.currentRound;
+    if (!r || r.phase !== "playing" || r.currentTurn !== 0) return;
+    const me = r.players.find((p) => p.isHuman)!;
+    const leadSuit = r.currentTrick.length > 0 ? r.currentTrick[0].card.suit : null;
+    const valid = getValidCardIndices(me.hand, leadSuit);
+    if (valid.length === 0) return;
+    const lowestIdx = valid.reduce((best, idx) =>
+      RANK_ORDER[me.hand[idx].rank] < RANK_ORDER[me.hand[best].rank] ? idx : best,
+      valid[0]
+    );
+    playCardSound();
+    handlePlayCard(lowestIdx);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [localMatch?.currentRound, playTimerExpireSound, playCardSound, handlePlayCard]);
+
+  const mpRound = localMatch?.currentRound ?? null;
+  const mpIsMyBidTurn =
+    mpRound?.phase === "bidding" &&
+    mpRound.bidOrder[mpRound.biddingTurnIndex] === 0 &&
+    localMatch?.matchPhase === "in-round";
+  const mpIsMyCardTurn =
+    mpRound?.phase === "playing" &&
+    mpRound.currentTurn === 0 &&
+    localMatch?.matchPhase === "in-round";
+
+  const bidTimer = useTurnTimer({
+    duration: 30,
+    enabled: !!mpIsMyBidTurn,
+    onExpire: handleBidExpire,
+    onWarning: playTimerWarningSound,
+  });
+
+  const playTimer = useTurnTimer({
+    duration: 20,
+    enabled: !!mpIsMyCardTurn,
+    onExpire: handlePlayExpire,
+    onWarning: playTimerWarningSound,
+  });
 
   // Trick winner toast (shown during between-tricks phase)
   const [showToast, setShowToast] = useState(false);
@@ -164,6 +222,7 @@ export default function MultiplayerGame({
           roundNumber={localMatch.roundNumber}
           forbiddenBid={isMyBidTurn ? forbiddenBid : null}
           onBid={handleBid}
+          timerNode={mpIsMyBidTurn ? <TurnTimer {...bidTimer} /> : undefined}
         />
       </main>
     );
@@ -297,7 +356,12 @@ export default function MultiplayerGame({
           )}
         </div>
 
-        {/* ── Bottom: current player (you) ── */}
+        {/* ── Bottom: current player (you) + play timer ── */}
+        {mpIsMyCardTurn && (
+          <div className="flex justify-center mb-0.5">
+            <TurnTimer {...playTimer} />
+          </div>
+        )}
         <PlayerArea
           player={human}
           position="bottom"

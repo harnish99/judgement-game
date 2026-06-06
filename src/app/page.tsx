@@ -10,12 +10,14 @@ import RoundResultScreen from "@/components/RoundResultScreen";
 import RulesScreen from "@/components/RulesScreen";
 import TrickArea from "@/components/TrickArea";
 import TrickWinnerToast from "@/components/TrickWinnerToast";
+import TurnTimer from "@/components/TurnTimer";
 import { aiBidForDifficulty, aiChooseCardForDifficulty } from "@/game/ai";
 import { getForbiddenBid, placeBid } from "@/game/bidding";
 import { finalizeRound, initMatch, startNextRound, totalRounds } from "@/game/match";
-import { getValidCardIndices, playCard, startNextTrick } from "@/game/trick";
+import { getValidCardIndices, playCard, startNextTrick, RANK_ORDER } from "@/game/trick";
 import type { Difficulty, MatchState, Player, PlayerCount } from "@/game/types";
 import { useSound } from "@/hooks/useSound";
+import { useTurnTimer } from "@/hooks/useTurnTimer";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAnalytics } from "@/hooks/useAnalytics";
 import { useStats } from "@/hooks/useStats";
@@ -91,7 +93,16 @@ export default function Home() {
   const [soloFlow, setSoloFlow] = useState(false);
   const [selectedDifficulty, setSelectedDifficulty] = useState<Difficulty>("easy");
   const initialized = useRef(false);
-  const { muted, toggleMute, playCardSound, playTrickWonSound, playRoundCompleteSound, playGameWonSound } = useSound();
+  const {
+    muted,
+    toggleMute,
+    playCardSound,
+    playTrickWonSound,
+    playRoundCompleteSound,
+    playGameWonSound,
+    playTimerWarningSound,
+    playTimerExpireSound,
+  } = useSound();
   const { hapticCard, hapticTrickWon } = useHaptics();
   const { track } = useAnalytics();
   const { recordGame, recordRound } = useStats();
@@ -230,6 +241,63 @@ export default function Home() {
         : prev
     );
   }, []);
+
+  // ── Timer: auto-bid on expire ─────────────────────────────────────────────
+  const handleBidExpire = useCallback(() => {
+    playTimerExpireSound();
+    setMatch((prev) => {
+      const r = prev?.currentRound;
+      if (!r || r.phase !== "bidding" || r.bidOrder[r.biddingTurnIndex] !== 0) return prev;
+      const forbidden = getForbiddenBid(r);
+      // Bid 0 unless forbidden, then bid 1.
+      const autoBid = forbidden === 0 ? 1 : 0;
+      return { ...prev!, currentRound: placeBid(r, autoBid) };
+    });
+  }, [playTimerExpireSound]);
+
+  // ── Timer: auto-play lowest legal card on expire ──────────────────────────
+  const handlePlayExpire = useCallback(() => {
+    playTimerExpireSound();
+    setMatch((prev) => {
+      const r = prev?.currentRound;
+      if (!r || r.phase !== "playing" || r.currentTurn !== 0) return prev;
+      const me = r.players.find((p) => p.isHuman)!;
+      const leadSuit = r.currentTrick.length > 0 ? r.currentTrick[0].card.suit : null;
+      const validIndices = getValidCardIndices(me.hand, leadSuit);
+      if (validIndices.length === 0) return prev;
+      const lowestIdx = validIndices.reduce((best, idx) =>
+        RANK_ORDER[me.hand[idx].rank] < RANK_ORDER[me.hand[best].rank] ? idx : best,
+        validIndices[0]
+      );
+      return { ...prev!, currentRound: playCard(r, 0, lowestIdx) };
+    });
+    playCardSound();
+  }, [playTimerExpireSound, playCardSound]);
+
+  // ── Derive timer enabled flags ────────────────────────────────────────────
+  const round0 = match?.currentRound ?? null;
+  const isHumanBidTurn =
+    round0?.phase === "bidding" &&
+    round0.bidOrder[round0.biddingTurnIndex] === 0 &&
+    match?.matchPhase === "in-round";
+  const isHumanCardTurn =
+    round0?.phase === "playing" &&
+    round0.currentTurn === 0 &&
+    match?.matchPhase === "in-round";
+
+  const bidTimer = useTurnTimer({
+    duration: 30,
+    enabled: !!isHumanBidTurn,
+    onExpire: handleBidExpire,
+    onWarning: playTimerWarningSound,
+  });
+
+  const playTimer = useTurnTimer({
+    duration: 20,
+    enabled: !!isHumanCardTurn,
+    onExpire: handlePlayExpire,
+    onWarning: playTimerWarningSound,
+  });
 
   useEffect(() => {
     const r = match?.currentRound;
@@ -528,6 +596,7 @@ export default function Home() {
           roundNumber={match.roundNumber}
           forbiddenBid={getForbiddenBid(round)}
           onBid={handleHumanBid}
+          timerNode={isHumanBidTurn ? <TurnTimer {...bidTimer} /> : undefined}
         />
         {showRules && <RulesScreen onClose={() => setShowRules(false)} />}
       </main>
@@ -637,7 +706,12 @@ export default function Home() {
           )}
         </div>
 
-        {/* ── Human ── */}
+        {/* ── Human (+ play timer when it's their turn) ── */}
+        {isHumanCardTurn && (
+          <div className="flex justify-center mb-0.5">
+            <TurnTimer {...playTimer} />
+          </div>
+        )}
         <PlayerArea
           player={human}
           position="bottom"

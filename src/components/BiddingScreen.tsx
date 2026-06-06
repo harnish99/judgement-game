@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { GameState } from "@/game/types";
 import Card from "./Card";
 
@@ -14,9 +15,11 @@ interface BiddingScreenProps {
   roundNumber: number;
   forbiddenBid: number | null;
   onBid: (bid: number) => void;
+  /** Optional timer rendered inside the human bid panel (pass <TurnTimer />). */
+  timerNode?: ReactNode;
 }
 
-export default function BiddingScreen({ game, roundNumber, forbiddenBid, onBid }: BiddingScreenProps) {
+export default function BiddingScreen({ game, roundNumber, forbiddenBid, onBid, timerNode }: BiddingScreenProps) {
   const { players, trump, trumpCard, bidOrder, biddingTurnIndex, bids, cardsPerPlayer } = game;
   const currentBidderId = bidOrder[biddingTurnIndex];
   const isHumanTurn = currentBidderId === 0;
@@ -87,9 +90,10 @@ export default function BiddingScreen({ game, roundNumber, forbiddenBid, onBid }
       {/* Human bid selector */}
       {isHumanTurn && (
         <div className="w-full bg-gray-800 rounded-2xl p-4">
-          <p className="text-sm text-gray-300 mb-3 text-center">
-            How many tricks will you win?
-          </p>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm text-gray-300">How many tricks will you win?</p>
+            {timerNode}
+          </div>
           <div className={`grid gap-2 ${bidCount <= 7 ? "grid-cols-7" : "grid-cols-7"}`}>
             {Array.from({ length: bidCount }, (_, i) => (
               <button
