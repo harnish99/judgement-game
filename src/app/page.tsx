@@ -17,6 +17,8 @@ import type { Difficulty, MatchState } from "@/game/types";
 import { useSound } from "@/hooks/useSound";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAnalytics } from "@/hooks/useAnalytics";
+import { useStats } from "@/hooks/useStats";
+import Link from "next/link";
 
 const STORAGE_KEY = "judgement-v1";
 
@@ -50,6 +52,7 @@ export default function Home() {
   const { muted, toggleMute, playCardSound, playTrickWonSound, playRoundCompleteSound, playGameWonSound } = useSound();
   const { hapticCard, hapticTrickWon } = useHaptics();
   const { track } = useAnalytics();
+  const { recordGame, recordRound } = useStats();
 
   // Load persisted state once on mount
   useEffect(() => {
@@ -103,6 +106,8 @@ export default function Home() {
             humanTricksWon: humanWon,
             humanRoundScore: lastResult.roundScores[0] ?? 0,
           });
+          // ── Stats: record round ──────────────────────────────────────────
+          recordRound(lastResult);
         }
       }
 
@@ -120,6 +125,8 @@ export default function Home() {
         } else {
           track("game_lost", { finalScore: humanScore, rank, totalRounds: match.roundNumber });
         }
+        // ── Stats: record game ─────────────────────────────────────────────
+        recordGame(match);
       }
 
       prevMatchPhaseRef.current = phase;
@@ -140,7 +147,7 @@ export default function Home() {
       });
       prevRoundNumberRef.current = roundNumber;
     }
-  }, [match?.matchPhase, match?.roundNumber, match, track, playRoundCompleteSound, playGameWonSound]);
+  }, [match?.matchPhase, match?.roundNumber, match, track, playRoundCompleteSound, playGameWonSound, recordRound, recordGame]);
 
   // ── Bidding ───────────────────────────────────────────────────────────────
   const handleHumanBid = useCallback((bid: number) => {
@@ -324,6 +331,18 @@ export default function Home() {
               AI evaluates hand strength and actively plays to hit its bid — winning when it needs to, ducking when it doesn&apos;t.
             </p>
           </button>
+
+          {/* Stats link */}
+          <Link
+            href="/stats"
+            className="w-full flex items-center justify-between bg-gray-800/60 hover:bg-gray-800 active:scale-95 rounded-2xl px-5 py-4 border border-gray-700 hover:border-gray-600 transition-all"
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-xl">📊</span>
+              <span className="text-base font-semibold text-gray-200">Statistics</span>
+            </div>
+            <span className="text-gray-500 text-lg">›</span>
+          </Link>
         </div>
 
         {showRules && <RulesScreen onClose={() => setShowRules(false)} />}
