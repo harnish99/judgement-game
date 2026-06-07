@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useRoom } from "@/hooks/useRoom";
 import RoomLobby from "@/components/multiplayer/RoomLobby";
@@ -31,8 +31,17 @@ export default function RoomPage() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
 
+  // Set while an intentional leave is in flight, so the redirect guard below
+  // doesn't race router.push("/") with its own router.replace("/lobby?…") —
+  // leave() clears the session and flips connectionStatus to "idle", which
+  // would otherwise make the guard think the session is just stale/missing
+  // and fire a competing navigation (visible as a flicker, sometimes leaving
+  // the user stranded on /lobby instead of the home page).
+  const leavingRef = useRef(false);
+
   // ── Guard: redirect if room code doesn't match the stored session ────────────
   useEffect(() => {
+    if (leavingRef.current) return;
     if (connectionStatus === "idle") {
       const session = loadSession();
       if (!session || session.roomCode.toUpperCase() !== code) {
@@ -56,6 +65,7 @@ export default function RoomPage() {
 
   // ── Leave handler ────────────────────────────────────────────────────────────
   const handleLeave = useCallback(async () => {
+    leavingRef.current = true;
     await leave();
     router.push("/");
   }, [leave, router]);
@@ -80,6 +90,20 @@ export default function RoomPage() {
         <p className="text-gray-400 text-sm">
           {connectionStatus === "reconnecting" ? "Reconnecting to room…" : "Joining room…"}
         </p>
+      </main>
+    );
+  }
+
+  // ── Leaving ───────────────────────────────────────────────────────────────────
+  // leave() clears the session and resets state to idle/null *before* the
+  // router.push("/") in handleLeave resolves, which would otherwise make this
+  // render fall into the error branch below for a frame ("Couldn't connect to
+  // room" flashing right before navigating home). Show a neutral state instead.
+  if (leavingRef.current) {
+    return (
+      <main className="min-h-screen flex flex-col items-center justify-center gap-4 p-6">
+        <div className="w-10 h-10 border-2 border-yellow-500 border-t-transparent rounded-full animate-spin" />
+        <p className="text-gray-400 text-sm">Leaving room…</p>
       </main>
     );
   }
