@@ -76,7 +76,11 @@ export async function loadGameState(
     .from("game_state")
     .select("state")
     .eq("room_id", roomId)
-    .single();
+    // maybeSingle (not single) so a not-yet-created row returns null instead of
+    // a 406 error. The host can mount MultiplayerGame and call loadGameState
+    // before initGameState's upsert commits; the realtime subscription then
+    // delivers the state moments later.
+    .maybeSingle();
 
   if (error || !data) return null;
   return data.state as unknown as MatchState;
