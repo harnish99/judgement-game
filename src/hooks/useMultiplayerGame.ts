@@ -96,6 +96,12 @@ export function useMultiplayerGame({ roomId, myPlayerOrder, isHost }: Options) {
   useEffect(() => {
     const unsub = subscribeToGameState(roomId, (state) => {
       setRawMatch(state);
+      // Realtime is a success path too — settle the load lifecycle here so a
+      // late delivery (after the retry loop already gave up and set `error`,
+      // or while a retry is sleeping) doesn't leave the UI stuck on the error
+      // screen or spinner despite valid state now being available.
+      setError(null);
+      setLoading(false);
     });
     return unsub;
   }, [roomId]);
