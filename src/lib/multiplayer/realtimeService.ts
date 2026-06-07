@@ -55,9 +55,7 @@ export function subscribeToRoom(
   onRoom: RoomChangeHandler,
   onStatus: StatusChangeHandler
 ): () => void {
-  let channel: RealtimeChannel;
-
-  channel = supabase
+  const channel: RealtimeChannel = supabase
     .channel(`room:${roomId}`, {
       config: { broadcast: { self: false } },
     })

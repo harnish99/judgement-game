@@ -3,10 +3,12 @@ import "./globals.css";
 import ServiceWorkerRegistrar from "@/components/ServiceWorkerRegistrar";
 import PostHogProvider from "@/components/PostHogProvider";
 import InstallPrompt from "@/components/InstallPrompt";
+import MotionProvider from "@/components/MotionProvider";
 
 export const metadata: Metadata = {
   title: "Judgement",
-  description: "A 4-player trick-taking card game — play offline, anytime.",
+  description:
+    "A trick-taking card game for 3–6 players — play solo against AI or with friends online.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
@@ -31,7 +33,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
+  // Note: maximumScale/user-scalable are intentionally omitted so users can
+  // pinch-zoom (WCAG 1.4.4 — Resize Text).
   themeColor: "#EAB308",
 };
 
@@ -55,7 +58,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="bg-gray-900 text-white antialiased">
         <PostHogProvider />
         <ServiceWorkerRegistrar />
-        {children}
+        <MotionProvider>{children}</MotionProvider>
         <InstallPrompt />
       </body>
     </html>

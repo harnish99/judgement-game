@@ -53,19 +53,12 @@ export function finalizeRound(match: MatchState): MatchState {
   // Guard: return the unchanged reference so React does not re-render.
   if (!round || round.roundScored) return match;
 
-  console.log("Round finalized");
-
   const roundScores = calculateRoundScores(round.bids, round.tricksWon);
   const playerIds = round.players.map((p) => p.id);
 
   const newScores: Record<number, number> = { ...match.scores };
   for (const id of playerIds) {
-    const earned = roundScores[id] ?? 0;
-    if (earned > 0) {
-      const player = round.players.find((p) => p.id === id)!;
-      console.log("Awarding score to:", player.name, "(+" + earned + ")");
-    }
-    newScores[id] = (match.scores[id] ?? 0) + earned;
+    newScores[id] = (match.scores[id] ?? 0) + (roundScores[id] ?? 0);
   }
 
   const result: RoundResult = {

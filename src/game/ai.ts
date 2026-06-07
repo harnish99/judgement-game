@@ -1,4 +1,4 @@
-import type { Card, Difficulty, GameState, Rank, Suit, TrickCard } from "./types";
+import type { Card, Difficulty, GameState, Suit, TrickCard } from "./types";
 import { RANK_ORDER } from "./trick";
 import { getForbiddenBid } from "./bidding";
 

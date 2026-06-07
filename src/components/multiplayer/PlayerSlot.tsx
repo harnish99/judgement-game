@@ -8,8 +8,6 @@ interface PlayerSlotProps {
   isCurrentPlayer?: boolean;
 }
 
-const SEAT_LABELS = ["You", "Player 2", "Player 3", "Player 4"];
-
 export default function PlayerSlot({
   player,
   seatIndex,

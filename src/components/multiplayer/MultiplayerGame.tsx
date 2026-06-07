@@ -21,7 +21,7 @@ import TrickArea from "@/components/TrickArea";
 import TrickWinnerToast from "@/components/TrickWinnerToast";
 import TurnTimer from "@/components/TurnTimer";
 import { getValidCardIndices, RANK_ORDER } from "@/game/trick";
-import { getForbiddenBid, placeBid } from "@/game/bidding";
+import { getForbiddenBid } from "@/game/bidding";
 import { totalRounds } from "@/game/match";
 import type { Player } from "@/game/types";
 
