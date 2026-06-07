@@ -4,17 +4,28 @@ import type { Difficulty, MatchState, PlayerCount, RoundResult } from "./types";
 
 // ─── Round / match constants ──────────────────────────────────────────────────
 
+/**
+ * Hard ceiling on how many rounds any match (solo or multiplayer) will play,
+ * regardless of player count. Without this, low player counts deal a card per
+ * round all the way up to `floor(52/playerCount)` — e.g. 17 rounds for 3
+ * players or 13 for 4 — which runs far longer than a typical session
+ * (especially live multiplayer). Higher player counts are naturally shorter
+ * (10 rounds for 5 players, 8 for 6) and stay unaffected by this cap.
+ */
+const MAX_ROUNDS = 12;
+
 /** Maximum cards dealt per player in a game with `playerCount` players. */
 export function maxCardsPerRound(playerCount: PlayerCount): number {
-  return Math.floor(52 / playerCount);
+  return Math.min(Math.floor(52 / playerCount), MAX_ROUNDS);
 }
 
 /**
  * Total number of rounds in a match.
- * Rounds go 1 card → 2 cards → … → maxCardsPerRound cards.
+ * Rounds go 1 card → 2 cards → … → maxCardsPerRound cards, capped at
+ * `MAX_ROUNDS` (12) so low player counts don't produce marathon matches.
  */
 export function totalRounds(playerCount: PlayerCount): number {
-  return Math.floor(52 / playerCount);
+  return Math.min(Math.floor(52 / playerCount), MAX_ROUNDS);
 }
 
 // ─── Match lifecycle ──────────────────────────────────────────────────────────
