@@ -102,12 +102,15 @@ function getTableLayout(players: Player[]) {
   }
 }
 
-const PLAYER_COUNT_OPTIONS: { count: PlayerCount; label: string; rounds: number }[] = [
-  { count: 3, label: "3 Players", rounds: 17 },
-  { count: 4, label: "4 Players", rounds: 13 },
-  { count: 5, label: "5 Players", rounds: 10 },
-  { count: 6, label: "6 Players", rounds: 8 },
-];
+// Derived from the actual game logic (not hardcoded) so this can never drift
+// from the real round count — see totalRounds() in game/match.ts, which caps
+// matches at 12 rounds regardless of player count.
+const PLAYER_COUNT_OPTIONS: { count: PlayerCount; label: string; rounds: number }[] =
+  ([3, 4, 5, 6] as PlayerCount[]).map((count) => ({
+    count,
+    label: `${count} Players`,
+    rounds: totalRounds(count),
+  }));
 
 export default function Home() {
   const [match, setMatch] = useState<MatchState | null>(null);
