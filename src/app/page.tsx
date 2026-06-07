@@ -8,6 +8,7 @@ import MatchSummary from "@/components/MatchSummary";
 import PlayerArea from "@/components/PlayerArea";
 import RoundResultScreen from "@/components/RoundResultScreen";
 import RulesScreen from "@/components/RulesScreen";
+import ContinueGameCard from "@/components/ContinueGameCard";
 import TrickArea from "@/components/TrickArea";
 import TrickWinnerToast from "@/components/TrickWinnerToast";
 import TurnTimer from "@/components/TurnTimer";
@@ -24,6 +25,9 @@ import { useStats } from "@/hooks/useStats";
 import Link from "next/link";
 
 const STORAGE_KEY = "judgement-v1";
+// Sibling key holding the epoch-ms timestamp of the last save. Stored
+// separately so the persisted MatchState format stays unchanged.
+const LAST_PLAYED_KEY = "judgement-v1-last-played";
 
 function loadMatch(): MatchState | null {
   try {
@@ -40,11 +44,31 @@ function loadMatch(): MatchState | null {
   }
 }
 
+function loadLastPlayed(): number | null {
+  try {
+    const raw = localStorage.getItem(LAST_PLAYED_KEY);
+    const n = raw ? Number(raw) : NaN;
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+}
+
 function saveMatch(match: MatchState) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(match));
+    localStorage.setItem(LAST_PLAYED_KEY, String(Date.now()));
   } catch {
     // Storage unavailable — continue without persistence
+  }
+}
+
+function clearSavedGame() {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(LAST_PLAYED_KEY);
+  } catch {
+    // Storage unavailable — nothing to clear
   }
 }
 
@@ -78,12 +102,15 @@ function getTableLayout(players: Player[]) {
   }
 }
 
-const PLAYER_COUNT_OPTIONS: { count: PlayerCount; label: string; rounds: number }[] = [
-  { count: 3, label: "3 Players", rounds: 17 },
-  { count: 4, label: "4 Players", rounds: 13 },
-  { count: 5, label: "5 Players", rounds: 10 },
-  { count: 6, label: "6 Players", rounds: 8 },
-];
+// Derived from the actual game logic (not hardcoded) so this can never drift
+// from the real round count — see totalRounds() in game/match.ts, which caps
+// matches at 12 rounds regardless of player count.
+const PLAYER_COUNT_OPTIONS: { count: PlayerCount; label: string; rounds: number }[] =
+  ([3, 4, 5, 6] as PlayerCount[]).map((count) => ({
+    count,
+    label: `${count} Players`,
+    rounds: totalRounds(count),
+  }));
 
 export default function Home() {
   const [match, setMatch] = useState<MatchState | null>(null);
@@ -92,6 +119,10 @@ export default function Home() {
   const [selectedCount, setSelectedCount] = useState<PlayerCount>(4);
   const [soloFlow, setSoloFlow] = useState(false);
   const [selectedDifficulty, setSelectedDifficulty] = useState<Difficulty>("easy");
+  // Detected resumable game (NOT auto-resumed — the user chooses Continue/New).
+  const [savedGame, setSavedGame] = useState<{ match: MatchState; lastPlayed: number | null } | null>(null);
+  // Confirmation gate before discarding saved progress.
+  const [confirmNewGame, setConfirmNewGame] = useState(false);
   const initialized = useRef(false);
   const {
     muted,
@@ -107,12 +138,18 @@ export default function Home() {
   const { track } = useAnalytics();
   const { recordGame, recordRound } = useStats();
 
-  // Load persisted state once on mount
+  // On mount, detect an unfinished saved game but DON'T auto-resume it.
+  // The user explicitly chooses Continue or New Game on the landing screen.
   useEffect(() => {
     if (initialized.current) return;
     initialized.current = true;
     const saved = loadMatch();
-    if (saved) setMatch(saved);
+    if (saved && saved.matchPhase !== "match-complete") {
+      setSavedGame({ match: saved, lastPlayed: loadLastPlayed() });
+    } else if (saved) {
+      // A finished game was lingering in storage — clear it.
+      clearSavedGame();
+    }
   }, []);
 
   // Persist on every change
@@ -124,8 +161,30 @@ export default function Home() {
 
   const handleStartMatch = useCallback((difficulty: Difficulty, playerCount: PlayerCount) => {
     setMatch(initMatch(difficulty, playerCount));
+    setSavedGame(null);
     track("game_started", { difficulty, playerCount });
   }, [track]);
+
+  // ── Saved-game (Continue / New Game) ──────────────────────────────────────
+  const handleContinueSaved = useCallback(() => {
+    if (!savedGame) return;
+    setMatch(savedGame.match);
+    setSavedGame(null);
+    track("game_resumed", {
+      roundNumber: savedGame.match.roundNumber,
+      playerCount: savedGame.match.playerCount,
+    });
+  }, [savedGame, track]);
+
+  // New Game from the Continue card asks for confirmation first (it discards progress).
+  const handleRequestNewGame = useCallback(() => setConfirmNewGame(true), []);
+  const handleCancelNewGame = useCallback(() => setConfirmNewGame(false), []);
+  const handleConfirmNewGame = useCallback(() => {
+    if (savedGame) track("saved_game_discarded", { fromRound: savedGame.match.roundNumber });
+    clearSavedGame();
+    setSavedGame(null);
+    setConfirmNewGame(false);
+  }, [savedGame, track]);
 
   // ── Round-complete: pause 1 s to show last trick, then finalize ───────────
   useEffect(() => {
@@ -421,21 +480,33 @@ export default function Home() {
           transition={{ duration: 0.5, delay: 0.38 }}
           className="flex flex-col gap-3 px-6 pb-14 max-w-sm w-full mx-auto"
         >
-          {/* Play Solo — primary CTA */}
-          <button
-            onClick={() => setSoloFlow(true)}
-            className="w-full py-[18px] bg-yellow-500 hover:bg-yellow-400 active:scale-[0.98] rounded-2xl text-gray-900 font-black text-lg tracking-wide transition-all shadow-xl shadow-yellow-500/20"
-          >
-            Play Solo
-          </button>
+          {savedGame ? (
+            /* Resume an unfinished game (no auto-resume — user chooses) */
+            <ContinueGameCard
+              match={savedGame.match}
+              lastPlayed={savedGame.lastPlayed}
+              onContinue={handleContinueSaved}
+              onNewGame={handleRequestNewGame}
+            />
+          ) : (
+            <>
+              {/* Play Solo — primary CTA */}
+              <button
+                onClick={() => setSoloFlow(true)}
+                className="w-full py-[18px] bg-yellow-500 hover:bg-yellow-400 active:scale-[0.98] rounded-2xl text-gray-900 font-black text-lg tracking-wide transition-all shadow-xl shadow-yellow-500/20"
+              >
+                Play Solo
+              </button>
 
-          {/* Play With Friends — secondary */}
-          <Link
-            href="/lobby"
-            className="w-full py-[18px] border-2 border-gray-700 hover:border-gray-500 active:scale-[0.98] rounded-2xl text-white font-bold text-lg transition-all text-center block"
-          >
-            Play With Friends
-          </Link>
+              {/* Play With Friends — secondary */}
+              <Link
+                href="/lobby"
+                className="w-full py-[18px] border-2 border-gray-700 hover:border-gray-500 active:scale-[0.98] rounded-2xl text-white font-bold text-lg transition-all text-center block"
+              >
+                Play With Friends
+              </Link>
+            </>
+          )}
 
           {/* Tertiary links */}
           <div className="flex items-center justify-center gap-6 pt-1">
@@ -545,6 +616,58 @@ export default function Home() {
                 </div>
               </motion.div>
             </>
+          )}
+        </AnimatePresence>
+
+        {/* ── Confirm: discard saved progress before starting a new game ── */}
+        <AnimatePresence>
+          {confirmNewGame && savedGame && (
+            <motion.div
+              key="confirm-newgame"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/70"
+              onClick={handleCancelNewGame}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="confirm-newgame-title"
+            >
+              <motion.div
+                onClick={(e) => e.stopPropagation()}
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                transition={{ type: "spring", damping: 28, stiffness: 320 }}
+                className="w-full max-w-sm bg-gray-900 border border-gray-700 rounded-2xl p-6 flex flex-col gap-4"
+              >
+                <h2 id="confirm-newgame-title" className="text-lg font-bold text-white text-center">
+                  Start a new game?
+                </h2>
+                <p className="text-sm text-gray-400 text-center">
+                  This will permanently delete your saved progress from{" "}
+                  <span className="text-gray-200 font-semibold">
+                    Round {savedGame.match.roundNumber}
+                  </span>
+                  . This can&apos;t be undone.
+                </p>
+                <div className="flex gap-3 mt-1">
+                  <button
+                    onClick={handleCancelNewGame}
+                    className="flex-1 py-3 rounded-xl border border-gray-700 hover:border-gray-500 text-white font-semibold text-sm transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleConfirmNewGame}
+                    className="flex-1 py-3 rounded-xl bg-red-600 hover:bg-red-500 active:bg-red-700 text-white font-semibold text-sm transition-colors"
+                  >
+                    Delete &amp; Continue
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
           )}
         </AnimatePresence>
 

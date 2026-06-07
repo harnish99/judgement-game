@@ -60,6 +60,14 @@ export interface EventMap {
     rank: number;
     totalRounds: number;
   };
+  game_resumed: {
+    roundNumber: number;
+    playerCount: number;
+  };
+  saved_game_discarded: {
+    /** Round the discarded game was on when the user chose New Game. */
+    fromRound: number;
+  };
 }
 
 export type AnalyticsEvent = keyof EventMap;

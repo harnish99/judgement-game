@@ -3,16 +3,18 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useRoom } from "@/hooks/useRoom";
+import { totalRounds } from "@/game/match";
 import type { PlayerCount } from "@/game/types";
 
 type Tab = "create" | "join";
 
-const PLAYER_COUNT_OPTIONS: { count: PlayerCount; rounds: number }[] = [
-  { count: 3, rounds: 17 },
-  { count: 4, rounds: 13 },
-  { count: 5, rounds: 10 },
-  { count: 6, rounds: 8 },
-];
+const PLAYER_COUNTS: PlayerCount[] = [3, 4, 5, 6];
+
+// Derived from the actual game logic (not hardcoded) so this can never drift
+// from the real round count — see totalRounds() in game/match.ts, which caps
+// matches at 12 rounds regardless of player count.
+const PLAYER_COUNT_OPTIONS: { count: PlayerCount; rounds: number }[] =
+  PLAYER_COUNTS.map((count) => ({ count, rounds: totalRounds(count) }));
 
 export default function LobbyPage() {
   const router = useRouter();

@@ -39,22 +39,56 @@ export function useMultiplayerGame({ roomId, myPlayerOrder, isHost }: Options) {
   const rawMatchRef = useRef<MatchState | null>(null);
   rawMatchRef.current = rawMatch;
 
-  // ── Load initial state ─────────────────────────────────────────────────────
+  // ── Load initial state (with retry fallback) ───────────────────────────────
+  //
+  // The host flips the room to "playing" optimistically, which mounts this hook
+  // BEFORE initGameState's upsert is guaranteed to have committed — so the first
+  // loadGameState can return null. Realtime normally delivers the row moments
+  // later, but if that INSERT event is missed the host would be stuck with no
+  // state forever. Retry the load every second until state arrives (or realtime
+  // fills it), giving up only after ~20s. We never overwrite an existing state,
+  // so this can't clobber a newer realtime update.
 
   useEffect(() => {
     let active = true;
-    loadGameState(roomId)
-      .then((state) => {
-        if (!active) return;
-        setRawMatch(state);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let attempts = 0;
+    const MAX_ATTEMPTS = 20;
+
+    async function tryLoad() {
+      if (!active) return;
+      // State already arrived (e.g. via realtime) — nothing left to do.
+      if (rawMatchRef.current) {
         setLoading(false);
-      })
-      .catch(() => {
+        return;
+      }
+      try {
+        const state = await loadGameState(roomId);
         if (!active) return;
-        setError("Could not load game state. Please refresh.");
-        setLoading(false);
-      });
-    return () => { active = false; };
+        if (state && !rawMatchRef.current) {
+          setRawMatch(state);
+          setLoading(false);
+          return;
+        }
+      } catch {
+        // Transient error — fall through to retry.
+      }
+      attempts += 1;
+      if (attempts >= MAX_ATTEMPTS) {
+        if (active && !rawMatchRef.current) {
+          setError("Could not load game state. Please refresh.");
+          setLoading(false);
+        }
+        return;
+      }
+      timer = setTimeout(tryLoad, 1000);
+    }
+
+    tryLoad();
+    return () => {
+      active = false;
+      if (timer) clearTimeout(timer);
+    };
   }, [roomId]);
 
   // ── Realtime subscription ──────────────────────────────────────────────────
@@ -62,6 +96,12 @@ export function useMultiplayerGame({ roomId, myPlayerOrder, isHost }: Options) {
   useEffect(() => {
     const unsub = subscribeToGameState(roomId, (state) => {
       setRawMatch(state);
+      // Realtime is a success path too — settle the load lifecycle here so a
+      // late delivery (after the retry loop already gave up and set `error`,
+      // or while a retry is sleeping) doesn't leave the UI stuck on the error
+      // screen or spinner despite valid state now being available.
+      setError(null);
+      setLoading(false);
     });
     return unsub;
   }, [roomId]);
