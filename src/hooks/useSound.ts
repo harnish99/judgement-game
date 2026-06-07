@@ -1,8 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 
 const MUTE_KEY = "judgement-mute";
+
+// Shared across every useSound() instance — the Web Audio spec allows only a
+// handful of live AudioContexts per page, and every component that wants to
+// play a sound (game screens, the global UI-click listener, etc.) calls this
+// hook. A module-level singleton avoids exhausting that budget and the
+// "autoplay" suspended-state dance happening redundantly in each instance.
+let sharedCtx: AudioContext | null = null;
 
 function loadMuted(): boolean {
   try {
@@ -18,31 +25,55 @@ function saveMuted(v: boolean) {
   } catch {}
 }
 
-export function useSound() {
-  const ctxRef = useRef<AudioContext | null>(null);
-  const [muted, setMutedState] = useState(false);
+// ─── Shared mute store ───────────────────────────────────────────────────────
+//
+// `muted` must be consistent across every useSound() instance — the toggle
+// lives on one screen (e.g. the in-game mute button), but other always-mounted
+// consumers (UiClickSound's global tap-sound listener) must respect it too.
+// Per-instance useState would let them drift out of sync the moment more than
+// one consumer exists. A tiny module-level store + useSyncExternalStore keeps
+// every instance subscribed to the same boolean, recomputed lazily on first
+// access (so SSR sees `false`, matching loadMuted()'s try/catch fallback).
 
-  useEffect(() => {
-    setMutedState(loadMuted());
-  }, []);
+let mutedState: boolean | null = null; // null = not yet loaded from storage
+const mutedListeners = new Set<() => void>();
+
+function getMutedSnapshot(): boolean {
+  if (mutedState === null) mutedState = loadMuted();
+  return mutedState;
+}
+
+function getMutedServerSnapshot(): boolean {
+  return false; // SSR has no localStorage; first client render reconciles via the store
+}
+
+function subscribeMuted(listener: () => void): () => void {
+  mutedListeners.add(listener);
+  return () => mutedListeners.delete(listener);
+}
+
+function setMutedShared(next: boolean) {
+  mutedState = next;
+  saveMuted(next);
+  mutedListeners.forEach((l) => l());
+}
+
+export function useSound() {
+  const muted = useSyncExternalStore(subscribeMuted, getMutedSnapshot, getMutedServerSnapshot);
 
   const getCtx = useCallback((): AudioContext | null => {
     if (typeof window === "undefined") return null;
-    if (!ctxRef.current) {
-      ctxRef.current = new AudioContext();
+    if (!sharedCtx) {
+      sharedCtx = new AudioContext();
     }
-    if (ctxRef.current.state === "suspended") {
-      ctxRef.current.resume();
+    if (sharedCtx.state === "suspended") {
+      sharedCtx.resume();
     }
-    return ctxRef.current;
+    return sharedCtx;
   }, []);
 
   const toggleMute = useCallback(() => {
-    setMutedState((prev) => {
-      const next = !prev;
-      saveMuted(next);
-      return next;
-    });
+    setMutedShared(!getMutedSnapshot());
   }, []);
 
   const playTone = useCallback(
@@ -69,6 +100,16 @@ export function useSound() {
     },
     [getCtx, muted]
   );
+
+  /**
+   * Soft, neutral "tap" — played on every interactive UI button press
+   * (see UiClickSound). Deliberately quiet and short (~35 ms) so it reads as
+   * tactile feedback rather than a distinct game event, and layers cleanly
+   * under the louder, longer game-action sounds below without muddying them.
+   */
+  const playClickSound = useCallback(() => {
+    playTone(700, 0, 0.035, 0.06, "triangle");
+  }, [playTone]);
 
   const playCardSound = useCallback(() => {
     playTone(800, 0, 0.08, 0.15, "square");
@@ -111,6 +152,7 @@ export function useSound() {
   return {
     muted,
     toggleMute,
+    playClickSound,
     playCardSound,
     playTrickWonSound,
     playRoundCompleteSound,

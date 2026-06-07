@@ -3,6 +3,7 @@ import "./globals.css";
 import ServiceWorkerRegistrar from "@/components/ServiceWorkerRegistrar";
 import PostHogProvider from "@/components/PostHogProvider";
 import InstallPrompt from "@/components/InstallPrompt";
+import UiClickSound from "@/components/UiClickSound";
 
 export const metadata: Metadata = {
   title: "Judgement",
@@ -55,6 +56,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="bg-gray-900 text-white antialiased">
         <PostHogProvider />
         <ServiceWorkerRegistrar />
+        <UiClickSound />
         {children}
         <InstallPrompt />
       </body>
