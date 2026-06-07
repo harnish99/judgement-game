@@ -1,4 +1,5 @@
 import type { Card as CardType } from "@/game/types";
+import { SUIT_SYMBOLS, SUIT_COLORS_ON_LIGHT } from "@/game/suits";
 
 interface CardProps {
   card?: CardType;
@@ -8,20 +9,6 @@ interface CardProps {
   highlighted?: boolean;
   dimmed?: boolean;
 }
-
-const SUIT_SYMBOLS: Record<string, string> = {
-  hearts: "♥",
-  diamonds: "♦",
-  clubs: "♣",
-  spades: "♠",
-};
-
-const SUIT_COLORS: Record<string, string> = {
-  hearts: "text-red-600",
-  diamonds: "text-red-600",
-  clubs: "text-gray-900",
-  spades: "text-gray-900",
-};
 
 export default function Card({ card, faceDown = false, small = false, onClick, highlighted, dimmed }: CardProps) {
   const interactive = !!onClick;
@@ -46,7 +33,7 @@ export default function Card({ card, faceDown = false, small = false, onClick, h
   }
 
   const symbol = SUIT_SYMBOLS[card.suit];
-  const color = SUIT_COLORS[card.suit];
+  const color = SUIT_COLORS_ON_LIGHT[card.suit];
 
   return (
     <div

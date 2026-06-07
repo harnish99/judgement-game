@@ -1,14 +1,7 @@
 import type { ReactNode } from "react";
 import type { GameState } from "@/game/types";
+import { SUIT_SYMBOLS, SUIT_COLORS_ON_DARK as SUIT_COLORS } from "@/game/suits";
 import Card from "./Card";
-
-const SUIT_SYMBOLS: Record<string, string> = {
-  hearts: "♥", diamonds: "♦", clubs: "♣", spades: "♠",
-};
-const SUIT_COLORS: Record<string, string> = {
-  hearts: "text-red-500", diamonds: "text-red-500",
-  clubs: "text-gray-200", spades: "text-gray-200",
-};
 
 interface BiddingScreenProps {
   game: GameState;

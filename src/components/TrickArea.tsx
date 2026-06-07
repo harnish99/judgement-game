@@ -2,6 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import type { Player, PlayerCount, Suit, TrickCard } from "@/game/types";
+import { SUIT_SYMBOLS, SUIT_COLORS_ON_DARK as SUIT_COLORS } from "@/game/suits";
 import Card from "./Card";
 
 interface TrickAreaProps {
@@ -12,14 +13,6 @@ interface TrickAreaProps {
   players: Player[];
   trickNumber: number;
 }
-
-const SUIT_SYMBOLS: Record<Suit, string> = {
-  hearts: "♥", diamonds: "♦", clubs: "♣", spades: "♠",
-};
-const SUIT_COLORS: Record<Suit, string> = {
-  hearts: "text-red-500", diamonds: "text-red-500",
-  clubs: "text-gray-300", spades: "text-gray-300",
-};
 
 // ─── Per-player-count grid positions (col, row — 1-indexed in a 3×3 grid) ────
 

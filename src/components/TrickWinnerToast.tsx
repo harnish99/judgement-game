@@ -2,14 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import type { Player, TrickCard } from "@/game/types";
-
-const SUIT_SYMBOLS: Record<string, string> = {
-  hearts: "♥", diamonds: "♦", clubs: "♣", spades: "♠",
-};
-const SUIT_COLORS: Record<string, string> = {
-  hearts: "text-red-400", diamonds: "text-red-400",
-  clubs: "text-gray-200", spades: "text-gray-200",
-};
+import { SUIT_SYMBOLS, SUIT_COLORS_ON_DARK as SUIT_COLORS } from "@/game/suits";
 
 interface TrickWinnerToastProps {
   visible: boolean;

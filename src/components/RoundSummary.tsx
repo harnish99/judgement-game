@@ -1,12 +1,5 @@
 import type { GameState } from "@/game/types";
-
-const SUIT_SYMBOLS: Record<string, string> = {
-  hearts: "♥", diamonds: "♦", clubs: "♣", spades: "♠",
-};
-const SUIT_COLORS: Record<string, string> = {
-  hearts: "text-red-400", diamonds: "text-red-400",
-  clubs: "text-gray-300", spades: "text-gray-300",
-};
+import { SUIT_SYMBOLS, SUIT_COLORS_ON_DARK as SUIT_COLORS } from "@/game/suits";
 
 interface RoundSummaryProps {
   game: GameState;
