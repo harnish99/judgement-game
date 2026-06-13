@@ -16,11 +16,13 @@ const SUIT_SYMBOLS: Record<string, string> = {
   spades: "♠",
 };
 
-const SUIT_COLORS: Record<string, string> = {
-  hearts: "text-red-600",
-  diamonds: "text-red-600",
-  clubs: "text-gray-900",
-  spades: "text-gray-900",
+// Inline colors — never affected by Tailwind purging.
+// Traditional two-color deck: red for hearts/diamonds, near-black for clubs/spades.
+const SUIT_COLOR_VALUES: Record<string, string> = {
+  hearts: "#dc2626",   // red-600
+  diamonds: "#dc2626", // red-600
+  clubs: "#1e293b",    // slate-800
+  spades: "#1e293b",   // slate-800
 };
 
 export default function Card({ card, faceDown = false, small = false, onClick, highlighted, dimmed }: CardProps) {
@@ -35,7 +37,7 @@ export default function Card({ card, faceDown = false, small = false, onClick, h
 
   const highlightClass = highlighted ? "ring-2 ring-yellow-400 -translate-y-2" : "";
   const dimClass = dimmed ? "opacity-40" : "";
-  const borderClass = faceDown || !card ? "border-blue-600" : "border-gray-300";
+  const borderClass = faceDown || !card ? "border-blue-600" : "border-gray-200";
 
   if (faceDown || !card) {
     return (
@@ -46,22 +48,38 @@ export default function Card({ card, faceDown = false, small = false, onClick, h
   }
 
   const symbol = SUIT_SYMBOLS[card.suit];
-  const color = SUIT_COLORS[card.suit];
+  const suitColor = SUIT_COLOR_VALUES[card.suit];
 
   return (
     <div
       className={`${base} ${borderClass} ${interactiveClasses} ${highlightClass} ${dimClass} bg-white flex flex-col`}
       onClick={onClick}
     >
-      <div className={`absolute top-0.5 left-1 leading-none ${color} ${small ? "text-xs" : "text-sm"}`}>
-        <div className="font-bold">{card.rank}</div>
-        <div>{symbol}</div>
+      {/* Top-left corner: rank + suit */}
+      <div
+        className={`absolute top-0.5 left-1 leading-none ${small ? "text-[9px]" : "text-xs"}`}
+        style={{ color: suitColor }}
+      >
+        <div className="font-bold leading-tight">{card.rank}</div>
+        <div className="leading-tight">{symbol}</div>
       </div>
-      <div className={`absolute bottom-0.5 right-1 leading-none rotate-180 ${color} ${small ? "text-xs" : "text-sm"}`}>
-        <div className="font-bold">{card.rank}</div>
-        <div>{symbol}</div>
+
+      {/* Bottom-right corner: rank + suit (rotated) */}
+      <div
+        className={`absolute bottom-0.5 right-1 leading-none rotate-180 ${small ? "text-[9px]" : "text-xs"}`}
+        style={{ color: suitColor }}
+      >
+        <div className="font-bold leading-tight">{card.rank}</div>
+        <div className="leading-tight">{symbol}</div>
       </div>
-      <div className={`m-auto ${color} ${small ? "text-lg" : "text-2xl"} font-bold`}>{symbol}</div>
+
+      {/* Large center suit — main legibility cue */}
+      <div
+        className={`m-auto leading-none select-none ${small ? "text-2xl" : "text-4xl"}`}
+        style={{ color: suitColor }}
+      >
+        {symbol}
+      </div>
     </div>
   );
 }
