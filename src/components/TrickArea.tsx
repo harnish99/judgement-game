@@ -26,6 +26,10 @@ const SUIT_COLORS: Record<Suit, string> = {
 type GridPos = { col: number; row: number };
 
 const GRID_POS: Record<PlayerCount, Record<number, GridPos>> = {
+  2: {
+    1: { col: 2, row: 1 }, // north (opponent)
+    0: { col: 2, row: 3 }, // south (human)
+  },
   3: {
     1: { col: 2, row: 1 }, // north
     2: { col: 3, row: 2 }, // east
@@ -59,6 +63,7 @@ const GRID_POS: Record<PlayerCount, Record<number, GridPos>> = {
 type Delta = { x?: number; y?: number };
 
 const ENTER_FROM: Record<PlayerCount, Record<number, Delta>> = {
+  2: { 1: { y: -48 }, 0: { y: 48 } },
   3: { 1: { y: -48 }, 2: { x: 48 },  0: { y: 48 } },
   4: { 1: { y: -48 }, 2: { x: -48 }, 3: { x: 48 },  0: { y: 48 } },
   5: {
@@ -76,6 +81,7 @@ const ENTER_FROM: Record<PlayerCount, Record<number, Delta>> = {
 type ExitDelta = { x?: number; y?: number; opacity: number };
 
 const EXIT_TOWARD: Record<PlayerCount, Record<number, ExitDelta>> = {
+  2: { 1: { y: -64, opacity: 0 }, 0: { y: 64, opacity: 0 } },
   3: { 1: { y: -64, opacity: 0 }, 2: { x: 64, opacity: 0 },  0: { y: 64, opacity: 0 } },
   4: { 1: { y: -64, opacity: 0 }, 2: { x: -64, opacity: 0 }, 3: { x: 64, opacity: 0 }, 0: { y: 64, opacity: 0 } },
   5: {

@@ -57,8 +57,8 @@ export type MatchPhase = "idle" | "in-round" | "round-result" | "match-complete"
 
 export type Difficulty = "easy" | "medium";
 
-/** 3–6 inclusive. Enforced at initMatch time. */
-export type PlayerCount = 3 | 4 | 5 | 6;
+/** 2–6 inclusive. Enforced at initMatch time. */
+export type PlayerCount = 2 | 3 | 4 | 5 | 6;
 
 export interface MatchState {
   matchPhase: MatchPhase;

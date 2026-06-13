@@ -80,6 +80,7 @@ function clearSavedGame() {
  * IDs are assigned clockwise: 1=N, 2=NW, 3=NE, 4=W/E, 5=E.
  *
  * Layout per count:
+ *  2p → top:[1], left:[], right:[]
  *  3p → top:[1], left:[], right:[2]
  *  4p → top:[1], left:[2], right:[3]
  *  5p → top:[2,1,3], left:[], right:[4]
@@ -91,6 +92,8 @@ function getTableLayout(players: Player[]) {
   const ai = players.filter((p) => !p.isHuman); // IDs 1..N-1 in order
 
   switch (n) {
+    case 2:
+      return { topRow: [ai[0]], leftPlayer: null, rightPlayer: null, human };
     case 3:
       return { topRow: [ai[0]], leftPlayer: null, rightPlayer: ai[1], human };
     case 5:
@@ -106,7 +109,7 @@ function getTableLayout(players: Player[]) {
 // from the real round count — see totalRounds() in game/match.ts, which caps
 // matches at 12 rounds regardless of player count.
 const PLAYER_COUNT_OPTIONS: { count: PlayerCount; label: string; rounds: number }[] =
-  ([3, 4, 5, 6] as PlayerCount[]).map((count) => ({
+  ([2, 3, 4, 5, 6] as PlayerCount[]).map((count) => ({
     count,
     label: `${count} Players`,
     rounds: totalRounds(count),
@@ -557,7 +560,7 @@ export default function Home() {
                   <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">
                     Players
                   </p>
-                  <div className="grid grid-cols-4 gap-2 mb-7">
+                  <div className="grid grid-cols-5 gap-2 mb-7">
                     {PLAYER_COUNT_OPTIONS.map(({ count, rounds }) => (
                       <button
                         key={count}

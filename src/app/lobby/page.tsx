@@ -8,7 +8,7 @@ import type { PlayerCount } from "@/game/types";
 
 type Tab = "create" | "join";
 
-const PLAYER_COUNTS: PlayerCount[] = [3, 4, 5, 6];
+const PLAYER_COUNTS: PlayerCount[] = [2, 3, 4, 5, 6];
 
 // Derived from the actual game logic (not hardcoded) so this can never drift
 // from the real round count — see totalRounds() in game/match.ts, which caps
@@ -122,7 +122,7 @@ export default function LobbyPage() {
             <label className="block text-xs text-gray-400 mb-1.5 uppercase tracking-wide">
               Players
             </label>
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-5 gap-2">
               {PLAYER_COUNT_OPTIONS.map(({ count, rounds }) => (
                 <button
                   key={count}

@@ -7,10 +7,10 @@ import type { Difficulty, MatchState, PlayerCount, RoundResult } from "./types";
 /**
  * Hard ceiling on how many rounds any match (solo or multiplayer) will play,
  * regardless of player count. Without this, low player counts deal a card per
- * round all the way up to `floor(52/playerCount)` — e.g. 17 rounds for 3
- * players or 13 for 4 — which runs far longer than a typical session
- * (especially live multiplayer). Higher player counts are naturally shorter
- * (10 rounds for 5 players, 8 for 6) and stay unaffected by this cap.
+ * round all the way up to `floor(52/playerCount)` — e.g. 26 rounds for 2
+ * players, 17 for 3, or 13 for 4 — which runs far longer than a typical
+ * session (especially live multiplayer). Higher player counts are naturally
+ * shorter (10 rounds for 5 players, 8 for 6) and stay unaffected by this cap.
  */
 const MAX_ROUNDS = 12;
 
