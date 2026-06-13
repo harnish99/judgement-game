@@ -21,10 +21,13 @@ export default function RulesScreen({ onClose }: RulesScreenProps) {
           <section>
             <h3 className="text-white font-semibold mb-1.5">Overview</h3>
             <p>
-              Judgement is a trick-taking card game for 4 players. A match lasts{" "}
-              <strong className="text-white">13 rounds</strong>. Round N deals{" "}
+              Judgement is a trick-taking card game for{" "}
+              <strong className="text-white">2 to 6 players</strong>. Round N deals{" "}
               <strong className="text-white">N cards</strong> to each player (1 card in Round 1,
-              13 cards in Round 13). The player with the most points after 13 rounds wins.
+              2 in Round 2, and so on). A match runs up to{" "}
+              <strong className="text-white">12 rounds</strong>; with more players it ends sooner
+              (e.g. 8 rounds for 6 players) since the deck is shared. The player with the most
+              points at the end wins.
             </p>
           </section>
 

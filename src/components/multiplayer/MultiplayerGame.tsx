@@ -33,6 +33,8 @@ function getTableLayout(players: Player[]) {
   const others = players.filter((p) => !p.isHuman); // local IDs 1..N-1 clockwise
 
   switch (n) {
+    case 2:
+      return { topRow: [others[0]], leftPlayer: null, rightPlayer: null, human };
     case 3:
       return { topRow: [others[0]], leftPlayer: null, rightPlayer: others[1] ?? null, human };
     case 5:
