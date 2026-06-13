@@ -6,6 +6,7 @@ import BidSummary from "@/components/BidSummary";
 import BiddingScreen from "@/components/BiddingScreen";
 import MatchSummary from "@/components/MatchSummary";
 import PlayerArea from "@/components/PlayerArea";
+import PlayerCountPicker from "@/components/PlayerCountPicker";
 import RoundResultScreen from "@/components/RoundResultScreen";
 import RulesScreen from "@/components/RulesScreen";
 import ContinueGameCard from "@/components/ContinueGameCard";
@@ -104,16 +105,6 @@ function getTableLayout(players: Player[]) {
       return { topRow: [ai[0]], leftPlayer: ai[1] ?? null, rightPlayer: ai[2] ?? null, human };
   }
 }
-
-// Derived from the actual game logic (not hardcoded) so this can never drift
-// from the real round count — see totalRounds() in game/match.ts, which caps
-// matches at 12 rounds regardless of player count.
-const PLAYER_COUNT_OPTIONS: { count: PlayerCount; label: string; rounds: number }[] =
-  ([2, 3, 4, 5, 6] as PlayerCount[]).map((count) => ({
-    count,
-    label: `${count} Players`,
-    rounds: totalRounds(count),
-  }));
 
 export default function Home() {
   const [match, setMatch] = useState<MatchState | null>(null);
@@ -560,24 +551,11 @@ export default function Home() {
                   <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">
                     Players
                   </p>
-                  <div className="grid grid-cols-5 gap-2 mb-7">
-                    {PLAYER_COUNT_OPTIONS.map(({ count, rounds }) => (
-                      <button
-                        key={count}
-                        onClick={() => setSelectedCount(count)}
-                        className={`flex flex-col items-center py-3 rounded-xl border-2 font-semibold transition-all ${
-                          selectedCount === count
-                            ? "bg-yellow-500 border-yellow-400 text-gray-900"
-                            : "bg-gray-800 border-gray-800 text-gray-300 hover:border-gray-600"
-                        }`}
-                      >
-                        <span className="text-xl font-black">{count}</span>
-                        <span className={`text-[11px] mt-0.5 ${selectedCount === count ? "text-yellow-900" : "text-gray-500"}`}>
-                          {rounds} rnds
-                        </span>
-                      </button>
-                    ))}
-                  </div>
+                  <PlayerCountPicker
+                    value={selectedCount}
+                    onChange={setSelectedCount}
+                    className="mb-7"
+                  />
 
                   {/* ── Difficulty ── */}
                   <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">

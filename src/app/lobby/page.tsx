@@ -3,18 +3,10 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useRoom } from "@/hooks/useRoom";
-import { totalRounds } from "@/game/match";
+import PlayerCountPicker from "@/components/PlayerCountPicker";
 import type { PlayerCount } from "@/game/types";
 
 type Tab = "create" | "join";
-
-const PLAYER_COUNTS: PlayerCount[] = [2, 3, 4, 5, 6];
-
-// Derived from the actual game logic (not hardcoded) so this can never drift
-// from the real round count — see totalRounds() in game/match.ts, which caps
-// matches at 12 rounds regardless of player count.
-const PLAYER_COUNT_OPTIONS: { count: PlayerCount; rounds: number }[] =
-  PLAYER_COUNTS.map((count) => ({ count, rounds: totalRounds(count) }));
 
 export default function LobbyPage() {
   const router = useRouter();
@@ -122,25 +114,7 @@ export default function LobbyPage() {
             <label className="block text-xs text-gray-400 mb-1.5 uppercase tracking-wide">
               Players
             </label>
-            <div className="grid grid-cols-5 gap-2">
-              {PLAYER_COUNT_OPTIONS.map(({ count, rounds }) => (
-                <button
-                  key={count}
-                  type="button"
-                  onClick={() => setMaxPlayers(count)}
-                  className={`flex flex-col items-center py-2.5 rounded-xl text-sm font-semibold transition-all ${
-                    maxPlayers === count
-                      ? "bg-yellow-500 text-gray-900 shadow"
-                      : "bg-gray-700 text-gray-300 hover:bg-gray-600"
-                  }`}
-                >
-                  <span className="text-base font-bold">{count}</span>
-                  <span className={`text-[10px] mt-0.5 ${maxPlayers === count ? "text-gray-700" : "text-gray-500"}`}>
-                    {rounds} rnds
-                  </span>
-                </button>
-              ))}
-            </div>
+            <PlayerCountPicker value={maxPlayers} onChange={setMaxPlayers} />
           </div>
 
           <p className="text-xs text-gray-500 -mt-1">
